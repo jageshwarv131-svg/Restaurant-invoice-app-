@@ -1,0 +1,12 @@
+<resources>
+    <string name="app_name">Vyapar Billing Pro</string>
+    <string name="brand_vyapar">VYAPAR</string>
+    <string name="brand_billing_pro">BILLING PRO</string>
+    <string name="brand_tagline">Bill Smart. Grow Smart.</string>
+    <string name="offline_ready">Offline Ready</string>
+    <string name="nav_home">Home</string>
+    <string name="nav_bills">Bills</string>
+    <string name="nav_products">Products</string>
+    <string name="nav_reports">Reports</string>
+    <string name="nav_more">More</string>
+</resources>

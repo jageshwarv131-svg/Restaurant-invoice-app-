@@ -1,0 +1,6 @@
+{
+  "name": "Vyapar Billing Pro",
+  "description": "Zero-investment offline-first Android POS billing, GST invoice PDF generator, WhatsApp PDF sharing, inventory, and reports app.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
