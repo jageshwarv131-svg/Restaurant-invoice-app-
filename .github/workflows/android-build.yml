@@ -22,11 +22,13 @@ jobs:
           distribution: temurin
           java-version: '21'
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
+      - name: Accept SDK licenses & check SDK path
+        run: |
+          export ANDROID_HOME=/usr/local/lib/android/sdk
+          export ANDROID_SDK_ROOT=/usr/local/lib/android/sdk
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          ls -la "$ANDROID_HOME" || true
+          yes | sdkmanager --licenses >/dev/null 2>&1 || true
 
       - name: Ensure debug keystore exists
         run: |
@@ -45,6 +47,9 @@ jobs:
         run: chmod +x ./gradlew
 
       - name: Build Debug APK
+        env:
+          ANDROID_HOME: /usr/local/lib/android/sdk
+          ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
         run: ./gradlew --no-daemon assembleDebug --stacktrace
 
       - name: Verify Debug APK exists
