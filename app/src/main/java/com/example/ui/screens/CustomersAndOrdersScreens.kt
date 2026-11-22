@@ -11,11 +11,16 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -66,6 +71,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.DialogProperties
 import com.example.data.CartLineInput
 import com.example.model.Customer
 import com.example.model.InventoryMovement
@@ -75,7 +81,9 @@ import com.example.model.Order
 import com.example.model.OrderStatus
 import com.example.model.Product
 import com.example.ui.components.EmptyStatePanel
+import com.example.ui.components.VyaparFormDialog
 import com.example.ui.components.VyaparTopBar
+import com.example.ui.components.rememberSafeBottomPadding
 import com.example.ui.theme.AlertRed
 import com.example.ui.theme.AlertRedSoft
 import com.example.ui.theme.AmberGold
@@ -303,40 +311,44 @@ fun CustomersScreen(
     var amountText by remember {
       mutableStateOf(CurrencyUtils.paiseToEditString(c.outstandingBalancePaise))
     }
-    AlertDialog(
-      onDismissRequest = { collectingForCustomer = null },
-      title = { Text("Collect Due Payment") },
-      text = {
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-          Text("Customer: ${c.name}")
-          Text(
-            "Outstanding: ${CurrencyUtils.formatPaise(c.outstandingBalancePaise, currencySymbol)}",
-            color = AlertRed,
-            fontWeight = FontWeight.Bold,
-          )
-          OutlinedTextField(
-            value = amountText,
-            onValueChange = { amountText = it },
-            label = { Text("Received Amount ($currencySymbol)") },
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth(),
-          )
-        }
+    VyaparFormDialog(
+      title = "Collect Due Payment",
+      onDismiss = { collectingForCustomer = null },
+      scrollContent = {
+        Text("Customer: ${c.name}")
+        Text(
+          "Outstanding: ${CurrencyUtils.formatPaise(c.outstandingBalancePaise, currencySymbol)}",
+          color = AlertRed,
+          fontWeight = FontWeight.Bold,
+        )
+        OutlinedTextField(
+          value = amountText,
+          onValueChange = { amountText = it },
+          label = { Text("Received Amount ($currencySymbol)") },
+          keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+          singleLine = true,
+          modifier = Modifier.fillMaxWidth(),
+        )
       },
-      confirmButton = {
+      bottomButtons = {
+        TextButton(
+          onClick = { collectingForCustomer = null },
+          modifier = Modifier.heightIn(min = 48.dp),
+        ) {
+          Text("Cancel")
+        }
+        Spacer(Modifier.width(8.dp))
         Button(
           onClick = {
             onCollectPayment(c.id, CurrencyUtils.rupeesToPaise(amountText))
             collectingForCustomer = null
           },
+          shape = RoundedCornerShape(10.dp),
           colors = ButtonDefaults.buttonColors(containerColor = EmeraldGreen),
+          modifier = Modifier.heightIn(min = 48.dp),
         ) {
-          Text("Record Payment", color = Color.White)
+          Text("Record Payment", color = Color.White, fontWeight = FontWeight.Bold)
         }
-      },
-      dismissButton = {
-        TextButton(onClick = { collectingForCustomer = null }) { Text("Cancel") }
       },
     )
   }
@@ -344,8 +356,16 @@ fun CustomersScreen(
   selectedCustomerForHistory?.let { customer ->
     val custInvoices =
       remember(invoices, customer.id) { invoices.filter { it.customerId == customer.id } }
-    ModalBottomSheet(onDismissRequest = { selectedCustomerForHistory = null }) {
-      Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
+    ModalBottomSheet(
+      onDismissRequest = { selectedCustomerForHistory = null },
+      contentWindowInsets = { WindowInsets(0, 0, 0, 0) },
+    ) {
+      val safeBottom = rememberSafeBottomPadding(extraPadding = 20.dp)
+      Column(
+        modifier =
+          Modifier.fillMaxWidth()
+            .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = safeBottom)
+      ) {
         Text("${customer.name} • Purchase History", style = MaterialTheme.typography.titleLarge)
         Spacer(Modifier.height(4.dp))
         Text(
@@ -358,7 +378,7 @@ fun CustomersScreen(
           Text("No invoices for this customer yet.", color = MaterialTheme.colorScheme.onSurfaceVariant)
         } else {
           LazyColumn(
-            modifier = Modifier.height(280.dp),
+            modifier = Modifier.weight(1f, fill = false).heightIn(max = 280.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
           ) {
             items(custInvoices, key = { it.id }) { inv ->
@@ -400,6 +420,8 @@ fun CustomersScreen(
   pendingDelete?.let { c ->
     AlertDialog(
       onDismissRequest = { pendingDelete = null },
+      properties = DialogProperties(decorFitsSystemWindows = false),
+      modifier = Modifier.statusBarsPadding().navigationBarsPadding().imePadding(),
       title = { Text("Delete Customer?") },
       text = { Text("Remove \"${c.name}\" from your customers list?") },
       confirmButton = {
@@ -430,54 +452,59 @@ private fun CustomerEditorDialog(
   var gstin by remember { mutableStateOf(initial?.gstin ?: "") }
   var nameError by remember { mutableStateOf(false) }
 
-  AlertDialog(
-    onDismissRequest = onDismiss,
-    title = { Text(if (initial == null) "Add Customer" else "Edit Customer") },
-    text = {
-      Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        OutlinedTextField(
-          value = name,
-          onValueChange = {
-            name = it
-            nameError = false
-          },
-          label = { Text("Customer Name *") },
-          isError = nameError,
-          singleLine = true,
-          modifier = Modifier.fillMaxWidth(),
-        )
-        OutlinedTextField(
-          value = mobile,
-          onValueChange = { mobile = it },
-          label = { Text("Mobile Number") },
-          keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
-          singleLine = true,
-          modifier = Modifier.fillMaxWidth(),
-        )
-        OutlinedTextField(
-          value = whatsapp,
-          onValueChange = { whatsapp = it },
-          label = { Text("WhatsApp Number") },
-          keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
-          singleLine = true,
-          modifier = Modifier.fillMaxWidth(),
-        )
-        OutlinedTextField(
-          value = address,
-          onValueChange = { address = it },
-          label = { Text("Address") },
-          modifier = Modifier.fillMaxWidth(),
-        )
-        OutlinedTextField(
-          value = gstin,
-          onValueChange = { gstin = it.take(15) },
-          label = { Text("Customer GSTIN (Optional)") },
-          singleLine = true,
-          modifier = Modifier.fillMaxWidth(),
-        )
-      }
+  VyaparFormDialog(
+    title = if (initial == null) "Add Customer" else "Edit Customer",
+    onDismiss = onDismiss,
+    scrollContent = {
+      OutlinedTextField(
+        value = name,
+        onValueChange = {
+          name = it
+          nameError = false
+        },
+        label = { Text("Customer Name *") },
+        isError = nameError,
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth(),
+      )
+      OutlinedTextField(
+        value = mobile,
+        onValueChange = { mobile = it },
+        label = { Text("Mobile Number") },
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth(),
+      )
+      OutlinedTextField(
+        value = whatsapp,
+        onValueChange = { whatsapp = it },
+        label = { Text("WhatsApp Number") },
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth(),
+      )
+      OutlinedTextField(
+        value = address,
+        onValueChange = { address = it },
+        label = { Text("Address") },
+        modifier = Modifier.fillMaxWidth(),
+      )
+      OutlinedTextField(
+        value = gstin,
+        onValueChange = { gstin = it.take(15) },
+        label = { Text("Customer GSTIN (Optional)") },
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth(),
+      )
     },
-    confirmButton = {
+    bottomButtons = {
+      TextButton(
+        onClick = onDismiss,
+        modifier = Modifier.heightIn(min = 48.dp),
+      ) {
+        Text("Cancel")
+      }
+      Spacer(Modifier.width(8.dp))
       Button(
         onClick = {
           if (name.trim().isEmpty()) {
@@ -498,12 +525,13 @@ private fun CustomerEditorDialog(
             )
           )
         },
+        shape = RoundedCornerShape(10.dp),
         colors = ButtonDefaults.buttonColors(containerColor = SaffronOrange),
+        modifier = Modifier.heightIn(min = 48.dp),
       ) {
-        Text("Save", color = Color.White)
+        Text("Save", color = Color.White, fontWeight = FontWeight.Bold)
       }
     },
-    dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
   )
 }
 
@@ -681,80 +709,85 @@ fun OrdersScreen(
     var selectedItems by remember { mutableStateOf<List<CartLineInput>>(emptyList()) }
     var notes by remember { mutableStateOf("") }
 
-    AlertDialog(
-      onDismissRequest = { showNewOrderDialog = false },
-      title = { Text("Create New Order") },
-      text = {
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-          Text("Customer: ${selectedCustomer?.name ?: "Walk-in Customer"}", fontWeight = FontWeight.SemiBold)
-          if (customers.isNotEmpty()) {
-            Row(
-              modifier = Modifier.horizontalScroll(rememberScrollState()),
-              horizontalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
+    VyaparFormDialog(
+      title = "Create New Order",
+      onDismiss = { showNewOrderDialog = false },
+      scrollContent = {
+        Text("Customer: ${selectedCustomer?.name ?: "Walk-in Customer"}", fontWeight = FontWeight.SemiBold)
+        if (customers.isNotEmpty()) {
+          Row(
+            modifier = Modifier.horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+          ) {
+            FilterChip(
+              selected = selectedCustomer == null,
+              onClick = { selectedCustomer = null },
+              label = { Text("Walk-in") },
+            )
+            customers.take(8).forEach { c ->
               FilterChip(
-                selected = selectedCustomer == null,
-                onClick = { selectedCustomer = null },
-                label = { Text("Walk-in") },
+                selected = selectedCustomer?.id == c.id,
+                onClick = { selectedCustomer = c },
+                label = { Text(c.name) },
               )
-              customers.take(8).forEach { c ->
-                FilterChip(
-                  selected = selectedCustomer?.id == c.id,
-                  onClick = { selectedCustomer = c },
-                  label = { Text(c.name) },
-                )
-              }
             }
           }
-          Text("Tap products to add (${selectedItems.size} added):", style = MaterialTheme.typography.labelMedium)
-          if (products.isEmpty()) {
-            Text("Add products first in the Products tab.", color = AlertRed, fontSize = 12.sp)
-          } else {
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-              products.take(6).forEach { p ->
-                Surface(
-                  shape = RoundedCornerShape(8.dp),
-                  color = MaterialTheme.colorScheme.background,
-                  modifier =
-                    Modifier.fillMaxWidth().clickable {
-                      selectedItems =
-                        selectedItems +
-                          CartLineInput(
-                            productId = p.id,
-                            name = p.name,
-                            unit = p.unit,
-                            quantity = 1.0,
-                            unitPricePaise = p.sellingPricePaise,
-                            gstPercent = p.gstPercent,
-                          )
-                    },
+        }
+        Text("Tap products to add (${selectedItems.size} added):", style = MaterialTheme.typography.labelMedium)
+        if (products.isEmpty()) {
+          Text("Add products first in the Products tab.", color = AlertRed, fontSize = 12.sp)
+        } else {
+          Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            products.take(6).forEach { p ->
+              Surface(
+                shape = RoundedCornerShape(8.dp),
+                color = MaterialTheme.colorScheme.background,
+                modifier =
+                  Modifier.fillMaxWidth().clickable {
+                    selectedItems =
+                      selectedItems +
+                        CartLineInput(
+                          productId = p.id,
+                          name = p.name,
+                          unit = p.unit,
+                          quantity = 1.0,
+                          unitPricePaise = p.sellingPricePaise,
+                          gstPercent = p.gstPercent,
+                        )
+                  },
+              ) {
+                Row(
+                  modifier = Modifier.padding(8.dp),
+                  horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
-                  Row(
-                    modifier = Modifier.padding(8.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                  ) {
-                    Text(p.name, fontSize = 13.sp)
-                    Text(
-                      "+ ${CurrencyUtils.formatPaise(p.sellingPricePaise, currencySymbol)}",
-                      color = SaffronOrange,
-                      fontWeight = FontWeight.Bold,
-                      fontSize = 13.sp,
-                    )
-                  }
+                  Text(p.name, fontSize = 13.sp)
+                  Text(
+                    "+ ${CurrencyUtils.formatPaise(p.sellingPricePaise, currencySymbol)}",
+                    color = SaffronOrange,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 13.sp,
+                  )
                 }
               }
             }
           }
-          OutlinedTextField(
-            value = notes,
-            onValueChange = { notes = it },
-            label = { Text("Order Notes") },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth(),
-          )
         }
+        OutlinedTextField(
+          value = notes,
+          onValueChange = { notes = it },
+          label = { Text("Order Notes") },
+          singleLine = true,
+          modifier = Modifier.fillMaxWidth(),
+        )
       },
-      confirmButton = {
+      bottomButtons = {
+        TextButton(
+          onClick = { showNewOrderDialog = false },
+          modifier = Modifier.heightIn(min = 48.dp),
+        ) {
+          Text("Cancel")
+        }
+        Spacer(Modifier.width(8.dp))
         Button(
           onClick = {
             if (selectedItems.isNotEmpty()) {
@@ -763,12 +796,13 @@ fun OrdersScreen(
             }
           },
           enabled = selectedItems.isNotEmpty(),
+          shape = RoundedCornerShape(10.dp),
           colors = ButtonDefaults.buttonColors(containerColor = SaffronOrange),
+          modifier = Modifier.heightIn(min = 48.dp),
         ) {
-          Text("Save Order", color = Color.White)
+          Text("Save Order", color = Color.White, fontWeight = FontWeight.Bold)
         }
       },
-      dismissButton = { TextButton(onClick = { showNewOrderDialog = false }) { Text("Cancel") } },
     )
   }
 }
@@ -964,63 +998,69 @@ fun InventoryScreen(
     var qtyText by remember { mutableStateOf("") }
     var reason by remember { mutableStateOf("") }
 
-    AlertDialog(
-      onDismissRequest = { adjustingProduct = null },
-      title = { Text("Update Stock: ${prod.name}") },
-      text = {
-        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-          Text("Current Stock: ${CurrencyUtils.formatQty(prod.stockQty)} ${prod.unit}")
-          Row(
-            modifier = Modifier.horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-          ) {
-            listOf(MovementType.STOCK_IN, MovementType.STOCK_OUT, MovementType.ADJUSTMENT).forEach { m ->
-              FilterChip(
-                selected = type == m,
-                onClick = { type = m },
-                label = { Text(m.label, fontSize = 12.sp) },
-                colors =
-                  FilterChipDefaults.filterChipColors(
-                    selectedContainerColor = SaffronOrange,
-                    selectedLabelColor = Color.White,
-                  ),
-              )
-            }
+    VyaparFormDialog(
+      title = "Update Stock: ${prod.name}",
+      onDismiss = { adjustingProduct = null },
+      scrollContent = {
+        Text("Current Stock: ${CurrencyUtils.formatQty(prod.stockQty)} ${prod.unit}")
+        Row(
+          modifier = Modifier.horizontalScroll(rememberScrollState()),
+          horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+          listOf(MovementType.STOCK_IN, MovementType.STOCK_OUT, MovementType.ADJUSTMENT).forEach { m ->
+            FilterChip(
+              selected = type == m,
+              onClick = { type = m },
+              label = { Text(m.label, fontSize = 12.sp) },
+              colors =
+                FilterChipDefaults.filterChipColors(
+                  selectedContainerColor = SaffronOrange,
+                  selectedLabelColor = Color.White,
+                ),
+            )
           }
-          OutlinedTextField(
-            value = qtyText,
-            onValueChange = { qtyText = it },
-            label = {
-              Text(
-                if (type == MovementType.ADJUSTMENT) "New Exact Stock Qty" else "Quantity (${prod.unit})"
-              )
-            },
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth(),
-          )
-          OutlinedTextField(
-            value = reason,
-            onValueChange = { reason = it },
-            label = { Text("Reason / Note") },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth(),
-          )
         }
+        OutlinedTextField(
+          value = qtyText,
+          onValueChange = { qtyText = it },
+          label = {
+            Text(
+              if (type == MovementType.ADJUSTMENT) "New Exact Stock Qty" else "Quantity (${prod.unit})"
+            )
+          },
+          keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+          singleLine = true,
+          modifier = Modifier.fillMaxWidth(),
+        )
+        OutlinedTextField(
+          value = reason,
+          onValueChange = { reason = it },
+          label = { Text("Reason / Note") },
+          singleLine = true,
+          modifier = Modifier.fillMaxWidth(),
+        )
       },
-      confirmButton = {
+      bottomButtons = {
+        TextButton(
+          onClick = { adjustingProduct = null },
+          modifier = Modifier.heightIn(min = 48.dp),
+        ) {
+          Text("Cancel")
+        }
+        Spacer(Modifier.width(8.dp))
         Button(
           onClick = {
             val q = qtyText.toDoubleOrNull() ?: return@Button
             onAdjustStock(prod.id, type, q, reason.trim())
             adjustingProduct = null
           },
+          shape = RoundedCornerShape(10.dp),
           colors = ButtonDefaults.buttonColors(containerColor = SaffronOrange),
+          modifier = Modifier.heightIn(min = 48.dp),
         ) {
-          Text("Update", color = Color.White)
+          Text("Update", color = Color.White, fontWeight = FontWeight.Bold)
         }
       },
-      dismissButton = { TextButton(onClick = { adjustingProduct = null }) { Text("Cancel") } },
     )
   }
 }

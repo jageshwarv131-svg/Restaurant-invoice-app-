@@ -9,12 +9,19 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
@@ -62,6 +69,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
@@ -80,10 +88,13 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.example.R
+import com.example.ui.components.AppSafeInsets
+import com.example.ui.components.LocalAppSafeInsets
 import com.example.ui.components.VyaparTopBar
 import com.example.ui.screens.BackupRestoreScreen
 import com.example.ui.screens.BillsHistoryScreen
@@ -181,7 +192,18 @@ fun VyaparBillingApp(vm: VyaparViewModel = viewModel()) {
   }
 
   VyaparBillingTheme(darkTheme = settings.darkMode) {
-    Box(modifier = Modifier.fillMaxSize()) {
+    val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+    val navBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    val imeBottom = WindowInsets.ime.asPaddingValues().calculateBottomPadding()
+
+    CompositionLocalProvider(
+      LocalAppSafeInsets provides AppSafeInsets(
+        statusTop = statusTop,
+        navBottom = navBottom,
+        imeBottom = imeBottom,
+      )
+    ) {
+      Box(modifier = Modifier.fillMaxSize()) {
       when {
         showSplash || !isLoaded -> {
           SplashScreen(onSplashFinished = { showSplash = false })
@@ -213,6 +235,7 @@ fun VyaparBillingApp(vm: VyaparViewModel = viewModel()) {
                 Column(
                   modifier =
                     Modifier.fillMaxHeight()
+                      .navigationBarsPadding()
                       .verticalScroll(rememberScrollState())
                 ) {
                   // Charcoal Brand Header
@@ -683,7 +706,11 @@ fun VyaparBillingApp(vm: VyaparViewModel = viewModel()) {
 
       SnackbarHost(
         hostState = snackbarHostState,
-        modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 84.dp),
+        modifier =
+          Modifier.align(Alignment.BottomCenter)
+            .navigationBarsPadding()
+            .imePadding()
+            .padding(bottom = 84.dp),
       )
 
       if (showAlertsDialog) {
@@ -691,9 +718,14 @@ fun VyaparBillingApp(vm: VyaparViewModel = viewModel()) {
         val dueCustomers = customers.filter { it.outstandingBalancePaise > 0 }
         AlertDialog(
           onDismissRequest = { showAlertsDialog = false },
+          properties = DialogProperties(decorFitsSystemWindows = false),
+          modifier = Modifier.statusBarsPadding().navigationBarsPadding().imePadding(),
           title = { Text("Business Alerts") },
           text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(
+              modifier = Modifier.verticalScroll(rememberScrollState()),
+              verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
               Text(
                 "Low Stock Products (${lowProducts.size})",
                 fontWeight = FontWeight.Bold,
@@ -741,6 +773,7 @@ fun VyaparBillingApp(vm: VyaparViewModel = viewModel()) {
             TextButton(onClick = { showAlertsDialog = false }) { Text("Close") }
           },
         )
+      }
       }
     }
   }

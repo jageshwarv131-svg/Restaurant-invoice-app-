@@ -17,8 +17,12 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -66,10 +70,12 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
 import com.example.data.CartLineInput
 import com.example.model.Product
 import com.example.ui.components.EmptyStatePanel
+import com.example.ui.components.VyaparFormDialog
 import com.example.ui.theme.AlertRed
 import com.example.ui.theme.AlertRedSoft
 import com.example.ui.theme.CharcoalHeader
@@ -147,7 +153,10 @@ fun ProductsScreen(
           color = CharcoalHeader,
           contentColor = Color.White,
           shadowElevation = 8.dp,
-          modifier = Modifier.fillMaxWidth().testTag("products_cart_summary_bar"),
+          modifier =
+            Modifier.fillMaxWidth()
+              .navigationBarsPadding()
+              .testTag("products_cart_summary_bar"),
         ) {
           Row(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
@@ -475,6 +484,8 @@ fun ProductsScreen(
   pendingDeleteProduct?.let { target ->
     AlertDialog(
       onDismissRequest = { pendingDeleteProduct = null },
+      properties = DialogProperties(decorFitsSystemWindows = false),
+      modifier = Modifier.statusBarsPadding().navigationBarsPadding().imePadding(),
       title = { Text("Delete Product?") },
       text = { Text("Remove \"${target.name}\" from your catalog? Past invoices remain intact.") },
       confirmButton = {
@@ -541,35 +552,10 @@ fun ProductEditorDialog(
   val gstPresets = listOf("0", "5", "12", "18", "28")
   val unitPresets = listOf("Pcs", "Kg", "Gm", "Ltr", "Box", "Pack", "Plate")
 
-  androidx.compose.ui.window.Dialog(
-    onDismissRequest = onDismiss,
-    properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false),
-  ) {
-    Surface(
-      shape = RoundedCornerShape(20.dp),
-      color = MaterialTheme.colorScheme.surface,
-      tonalElevation = 4.dp,
-      modifier =
-        Modifier.fillMaxWidth()
-          .padding(horizontal = 16.dp, vertical = 24.dp),
-    ) {
-      Column(
-        modifier = Modifier.fillMaxWidth().padding(18.dp),
-      ) {
-        Text(
-          text = if (initial == null) "Add Product" else "Edit Product",
-          style = MaterialTheme.typography.titleLarge,
-          fontWeight = FontWeight.Bold,
-        )
-        Spacer(Modifier.height(12.dp))
-
-        Column(
-          modifier =
-            Modifier.weight(1f, fill = false)
-              .fillMaxWidth()
-              .verticalScroll(rememberScrollState()),
-          verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
+  VyaparFormDialog(
+    title = if (initial == null) "Add Product" else "Edit Product",
+    onDismiss = onDismiss,
+    scrollContent = {
           Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -753,54 +739,52 @@ fun ProductEditorDialog(
               modifier = Modifier.weight(1f),
             )
           }
-        }
-
-        Spacer(Modifier.height(14.dp))
-        Row(
-          modifier = Modifier.fillMaxWidth(),
-          horizontalArrangement = Arrangement.End,
-        ) {
-          TextButton(onClick = onDismiss) { Text("Cancel") }
-          Spacer(Modifier.width(8.dp))
-          Button(
-            onClick = {
-              val trimmedName = name.trim()
-              val parsedSelling = CurrencyUtils.rupeesToPaise(sellingPrice)
-              if (trimmedName.isEmpty()) {
-                nameError = true
-                return@Button
-              }
-              if (sellingPrice.trim().isEmpty() || parsedSelling <= 0L) {
-                priceError = true
-                return@Button
-              }
-              val product =
-                Product(
-                  id = initial?.id ?: "",
-                  name = trimmedName,
-                  sku = sku.trim(),
-                  barcode = barcode.trim(),
-                  category = category.trim().ifBlank { "General" },
-                  purchasePricePaise = CurrencyUtils.rupeesToPaise(purchasePrice),
-                  sellingPricePaise = parsedSelling,
-                  mrpPaise = CurrencyUtils.rupeesToPaise(mrp),
-                  stockQty = (stockQty.toDoubleOrNull() ?: 0.0).coerceAtLeast(0.0),
-                  lowStockThreshold = (lowThreshold.toDoubleOrNull() ?: 5.0).coerceAtLeast(0.0),
-                  unit = unit.ifBlank { "Pcs" },
-                  gstPercent = (gstPercent.toDoubleOrNull() ?: 0.0).coerceIn(0.0, 100.0),
-                  imagePath = initial?.imagePath,
-                  createdAt = initial?.createdAt ?: System.currentTimeMillis(),
-                )
-              onSave(product, pickedUri)
-            },
-            shape = RoundedCornerShape(10.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = SaffronOrange),
-            modifier = Modifier.testTag("save_product_button"),
-          ) {
-            Text("Save Product", color = Color.White, fontWeight = FontWeight.Bold)
-          }
-        }
+    },
+    bottomButtons = {
+      TextButton(
+        onClick = onDismiss,
+        modifier = Modifier.heightIn(min = 48.dp),
+      ) {
+        Text("Cancel")
       }
-    }
-  }
+      Spacer(Modifier.width(8.dp))
+      Button(
+        onClick = {
+          val trimmedName = name.trim()
+          val parsedSelling = CurrencyUtils.rupeesToPaise(sellingPrice)
+          if (trimmedName.isEmpty()) {
+            nameError = true
+            return@Button
+          }
+          if (sellingPrice.trim().isEmpty() || parsedSelling <= 0L) {
+            priceError = true
+            return@Button
+          }
+          val product =
+            Product(
+              id = initial?.id ?: "",
+              name = trimmedName,
+              sku = sku.trim(),
+              barcode = barcode.trim(),
+              category = category.trim().ifBlank { "General" },
+              purchasePricePaise = CurrencyUtils.rupeesToPaise(purchasePrice),
+              sellingPricePaise = parsedSelling,
+              mrpPaise = CurrencyUtils.rupeesToPaise(mrp),
+              stockQty = (stockQty.toDoubleOrNull() ?: 0.0).coerceAtLeast(0.0),
+              lowStockThreshold = (lowThreshold.toDoubleOrNull() ?: 5.0).coerceAtLeast(0.0),
+              unit = unit.ifBlank { "Pcs" },
+              gstPercent = (gstPercent.toDoubleOrNull() ?: 0.0).coerceIn(0.0, 100.0),
+              imagePath = initial?.imagePath,
+              createdAt = initial?.createdAt ?: System.currentTimeMillis(),
+            )
+          onSave(product, pickedUri)
+        },
+        shape = RoundedCornerShape(10.dp),
+        colors = ButtonDefaults.buttonColors(containerColor = SaffronOrange),
+        modifier = Modifier.heightIn(min = 48.dp).testTag("save_product_button"),
+      ) {
+        Text("Save Product", color = Color.White, fontWeight = FontWeight.Bold)
+      }
+    },
+  )
 }

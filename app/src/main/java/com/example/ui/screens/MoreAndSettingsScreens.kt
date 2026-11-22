@@ -15,12 +15,18 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.AccountBalanceWallet
@@ -72,6 +78,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.DialogProperties
 import com.example.model.AppLanguage
 import com.example.model.AppSettings
 import com.example.model.FullBackupBundle
@@ -79,6 +86,7 @@ import com.example.model.GstTaxMode
 import com.example.model.GstTaxType
 import com.example.model.PaperFormat
 import com.example.pdf.ShareAndPrintHelper
+import com.example.ui.components.VyaparFormDialog
 import com.example.ui.components.VyaparTopBar
 import com.example.ui.theme.EmeraldGreen
 import com.example.ui.theme.SaffronOrange
@@ -231,37 +239,42 @@ fun MoreScreen(
     var pinEnabled by remember { mutableStateOf(settings.appPinEnabled) }
     var pinText by remember { mutableStateOf(settings.appPin) }
 
-    AlertDialog(
-      onDismissRequest = { showPinDialog = false },
-      title = { Text("App PIN Security") },
-      text = {
-        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-          Row(
+    VyaparFormDialog(
+      title = "App PIN Security",
+      onDismiss = { showPinDialog = false },
+      scrollContent = {
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.SpaceBetween,
+          verticalAlignment = Alignment.CenterVertically,
+        ) {
+          Text("Enable Startup PIN Lock")
+          Switch(
+            checked = pinEnabled,
+            onCheckedChange = { pinEnabled = it },
+            colors = SwitchDefaults.colors(checkedTrackColor = SaffronOrange),
+          )
+        }
+        if (pinEnabled) {
+          OutlinedTextField(
+            value = pinText,
+            onValueChange = { pinText = it.filter { c -> c.isDigit() }.take(6) },
+            label = { Text("Set 4-6 Digit PIN") },
+            visualTransformation = PasswordVisualTransformation(),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+            singleLine = true,
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-          ) {
-            Text("Enable Startup PIN Lock")
-            Switch(
-              checked = pinEnabled,
-              onCheckedChange = { pinEnabled = it },
-              colors = SwitchDefaults.colors(checkedTrackColor = SaffronOrange),
-            )
-          }
-          if (pinEnabled) {
-            OutlinedTextField(
-              value = pinText,
-              onValueChange = { pinText = it.filter { c -> c.isDigit() }.take(6) },
-              label = { Text("Set 4-6 Digit PIN") },
-              visualTransformation = PasswordVisualTransformation(),
-              keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
-              singleLine = true,
-              modifier = Modifier.fillMaxWidth(),
-            )
-          }
+          )
         }
       },
-      confirmButton = {
+      bottomButtons = {
+        TextButton(
+          onClick = { showPinDialog = false },
+          modifier = Modifier.heightIn(min = 48.dp),
+        ) {
+          Text("Cancel")
+        }
+        Spacer(Modifier.width(8.dp))
         Button(
           onClick = {
             if (!pinEnabled || pinText.length >= 4) {
@@ -269,12 +282,13 @@ fun MoreScreen(
               showPinDialog = false
             }
           },
+          shape = RoundedCornerShape(10.dp),
           colors = ButtonDefaults.buttonColors(containerColor = SaffronOrange),
+          modifier = Modifier.heightIn(min = 48.dp),
         ) {
-          Text("Save", color = Color.White)
+          Text("Save", color = Color.White, fontWeight = FontWeight.Bold)
         }
       },
-      dismissButton = { TextButton(onClick = { showPinDialog = false }) { Text("Cancel") } },
     )
   }
 }
@@ -328,13 +342,38 @@ fun InvoiceSettingsScreen(
         showBack = true,
         onBackOrMenuClick = onBack,
       )
-    }
+    },
+    bottomBar = {
+      Surface(
+        color = MaterialTheme.colorScheme.surface,
+        shadowElevation = 8.dp,
+        modifier = Modifier.navigationBarsPadding(),
+      ) {
+        Box(
+          modifier =
+            Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 16.dp)
+        ) {
+          Button(
+            onClick = {
+              onSaveInvoiceDefaults(paperFormat, taxType, taxMode, autoRound)
+              onBack()
+            },
+            shape = RoundedCornerShape(12.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = SaffronOrange),
+            modifier = Modifier.fillMaxWidth().height(50.dp),
+          ) {
+            Text("Save Settings", color = Color.White, fontWeight = FontWeight.Bold)
+          }
+        }
+      }
+    },
   ) { innerPadding ->
     Column(
       modifier =
         Modifier.fillMaxSize()
           .background(MaterialTheme.colorScheme.background)
           .padding(innerPadding)
+          .verticalScroll(rememberScrollState())
           .padding(16.dp),
       verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
@@ -389,18 +428,6 @@ fun InvoiceSettingsScreen(
             )
           }
         }
-      }
-
-      Button(
-        onClick = {
-          onSaveInvoiceDefaults(paperFormat, taxType, taxMode, autoRound)
-          onBack()
-        },
-        shape = RoundedCornerShape(12.dp),
-        colors = ButtonDefaults.buttonColors(containerColor = SaffronOrange),
-        modifier = Modifier.fillMaxWidth().height(50.dp),
-      ) {
-        Text("Save Settings", color = Color.White, fontWeight = FontWeight.Bold)
       }
     }
   }
@@ -574,6 +601,8 @@ fun BackupRestoreScreen(
   pendingRestoreBundle?.let { bundle ->
     AlertDialog(
       onDismissRequest = { pendingRestoreBundle = null },
+      properties = DialogProperties(decorFitsSystemWindows = false),
+      modifier = Modifier.statusBarsPadding().navigationBarsPadding().imePadding(),
       title = { Text("Confirm Backup Restore?") },
       text = {
         Text(

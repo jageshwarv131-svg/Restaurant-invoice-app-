@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -536,6 +537,7 @@ fun BusinessSetupScreen(
         Modifier.fillMaxSize()
           .background(MaterialTheme.colorScheme.background)
           .padding(innerPadding)
+          .consumeWindowInsets(innerPadding)
           .imePadding()
           .verticalScroll(rememberScrollState())
           .padding(16.dp),
@@ -805,7 +807,14 @@ fun PinLockScreen(onVerifyPin: (String) -> Boolean) {
   var error by remember { mutableStateOf(false) }
 
   Box(
-    modifier = Modifier.fillMaxSize().background(CharcoalBlack).padding(24.dp),
+    modifier =
+      Modifier.fillMaxSize()
+        .background(CharcoalBlack)
+        .statusBarsPadding()
+        .navigationBarsPadding()
+        .imePadding()
+        .verticalScroll(rememberScrollState())
+        .padding(24.dp),
     contentAlignment = Alignment.Center,
   ) {
     Surface(

@@ -17,10 +17,14 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -88,6 +92,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.DialogProperties
 import com.example.model.AppLanguage
 import com.example.model.Customer
 import com.example.model.GstTaxMode
@@ -99,6 +104,8 @@ import com.example.model.Product
 import com.example.pdf.ShareAndPrintHelper
 import com.example.ui.PosCartState
 import com.example.ui.components.EmptyStatePanel
+import com.example.ui.components.VyaparFormDialog
+import com.example.ui.components.rememberSafeBottomPadding
 import com.example.ui.theme.AlertRed
 import com.example.ui.theme.CharcoalHeader
 import com.example.ui.theme.EmeraldGreen
@@ -262,6 +269,8 @@ fun BillsHistoryScreen(
   pendingDelete?.let { target ->
     AlertDialog(
       onDismissRequest = { pendingDelete = null },
+      properties = DialogProperties(decorFitsSystemWindows = false),
+      modifier = Modifier.statusBarsPadding().navigationBarsPadding().imePadding(),
       title = { Text("Delete Invoice ${target.invoiceNumber}?") },
       text = { Text("This permanently deletes the selected invoice record.") },
       confirmButton = {
@@ -379,7 +388,10 @@ fun PosBillingScreen(
         shadowElevation = 10.dp,
         modifier = Modifier.navigationBarsPadding(),
       ) {
-        Column(modifier = Modifier.fillMaxWidth().padding(14.dp)) {
+        Column(
+          modifier =
+            Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, top = 12.dp, bottom = 16.dp)
+        ) {
           // Total Orange Pill matching Screen 6
           Surface(
             shape = RoundedCornerShape(12.dp),
@@ -447,7 +459,9 @@ fun PosBillingScreen(
       modifier =
         Modifier.fillMaxSize()
           .background(MaterialTheme.colorScheme.background)
-          .padding(innerPadding),
+          .padding(innerPadding)
+          .consumeWindowInsets(innerPadding)
+          .imePadding(),
       contentPadding = PaddingValues(14.dp),
       verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
@@ -885,14 +899,22 @@ fun PosBillingScreen(
   }
 
   if (showProductPicker) {
-    ModalBottomSheet(onDismissRequest = { showProductPicker = false }) {
+    ModalBottomSheet(
+      onDismissRequest = { showProductPicker = false },
+      contentWindowInsets = { WindowInsets(0, 0, 0, 0) },
+    ) {
       var q by remember { mutableStateOf("") }
       val matches =
         remember(products, q) {
           if (q.isBlank()) products
           else products.filter { it.name.contains(q, ignoreCase = true) || it.sku.contains(q, ignoreCase = true) }
         }
-      Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
+      val safeBottom = rememberSafeBottomPadding(extraPadding = 20.dp)
+      Column(
+        modifier =
+          Modifier.fillMaxWidth()
+            .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = safeBottom)
+      ) {
         Row(
           modifier = Modifier.fillMaxWidth(),
           horizontalArrangement = Arrangement.SpaceBetween,
@@ -921,7 +943,10 @@ fun PosBillingScreen(
           modifier = Modifier.fillMaxWidth(),
         )
         Spacer(Modifier.height(10.dp))
-        LazyColumn(modifier = Modifier.height(310.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        LazyColumn(
+          modifier = Modifier.weight(1f, fill = false).heightIn(max = 310.dp),
+          verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
           items(matches, key = { it.id }) { prod ->
             val qtyInCart = cart.items.find { it.productId == prod.id }?.quantity ?: 0.0
             Surface(
@@ -1025,16 +1050,23 @@ fun PosBillingScreen(
             fontWeight = FontWeight.Bold,
           )
         }
-        Spacer(Modifier.height(8.dp))
       }
     }
   }
 
   if (showCustomerPicker) {
-    ModalBottomSheet(onDismissRequest = { showCustomerPicker = false }) {
+    ModalBottomSheet(
+      onDismissRequest = { showCustomerPicker = false },
+      contentWindowInsets = { WindowInsets(0, 0, 0, 0) },
+    ) {
       var quickName by remember { mutableStateOf("") }
       var quickMobile by remember { mutableStateOf("") }
-      Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
+      val safeBottom = rememberSafeBottomPadding(extraPadding = 20.dp)
+      Column(
+        modifier =
+          Modifier.fillMaxWidth()
+            .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = safeBottom)
+      ) {
         Text("Select Customer", style = MaterialTheme.typography.titleLarge)
         Spacer(Modifier.height(8.dp))
         Surface(
@@ -1054,7 +1086,10 @@ fun PosBillingScreen(
           )
         }
         Spacer(Modifier.height(10.dp))
-        LazyColumn(modifier = Modifier.height(220.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        LazyColumn(
+          modifier = Modifier.weight(1f, fill = false).heightIn(max = 200.dp),
+          verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
           items(customers, key = { it.id }) { cust ->
             Surface(
               shape = RoundedCornerShape(12.dp),
@@ -1113,10 +1148,11 @@ fun PosBillingScreen(
               }
             }
           },
+          shape = RoundedCornerShape(12.dp),
           colors = ButtonDefaults.buttonColors(containerColor = SaffronOrange),
-          modifier = Modifier.fillMaxWidth(),
+          modifier = Modifier.fillMaxWidth().height(48.dp),
         ) {
-          Text("Save & Select Customer", color = Color.White)
+          Text("Save & Select Customer", color = Color.White, fontWeight = FontWeight.Bold)
         }
       }
     }
@@ -1129,56 +1165,61 @@ fun PosBillingScreen(
     var itemGst by remember { mutableStateOf("0") }
     var itemUnit by remember { mutableStateOf("Pcs") }
 
-    AlertDialog(
-      onDismissRequest = { showCustomItemDialog = false },
-      title = { Text("Add Custom Item") },
-      text = {
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    VyaparFormDialog(
+      title = "Add Custom Item",
+      onDismiss = { showCustomItemDialog = false },
+      scrollContent = {
+        OutlinedTextField(
+          value = itemName,
+          onValueChange = { itemName = it },
+          label = { Text("Item Name *") },
+          singleLine = true,
+          modifier = Modifier.fillMaxWidth(),
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
           OutlinedTextField(
-            value = itemName,
-            onValueChange = { itemName = it },
-            label = { Text("Item Name *") },
+            value = itemQty,
+            onValueChange = { itemQty = it },
+            label = { Text("Qty") },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
             singleLine = true,
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.weight(1f),
           )
-          Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedTextField(
-              value = itemQty,
-              onValueChange = { itemQty = it },
-              label = { Text("Qty") },
-              keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-              singleLine = true,
-              modifier = Modifier.weight(1f),
-            )
-            OutlinedTextField(
-              value = itemPrice,
-              onValueChange = { itemPrice = it },
-              label = { Text("Unit Price *") },
-              keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-              singleLine = true,
-              modifier = Modifier.weight(1f),
-            )
-          }
-          Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedTextField(
-              value = itemGst,
-              onValueChange = { itemGst = it },
-              label = { Text("GST %") },
-              keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-              singleLine = true,
-              modifier = Modifier.weight(1f),
-            )
-            OutlinedTextField(
-              value = itemUnit,
-              onValueChange = { itemUnit = it },
-              label = { Text("Unit") },
-              singleLine = true,
-              modifier = Modifier.weight(1f),
-            )
-          }
+          OutlinedTextField(
+            value = itemPrice,
+            onValueChange = { itemPrice = it },
+            label = { Text("Unit Price *") },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+            singleLine = true,
+            modifier = Modifier.weight(1f),
+          )
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+          OutlinedTextField(
+            value = itemGst,
+            onValueChange = { itemGst = it },
+            label = { Text("GST %") },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+            singleLine = true,
+            modifier = Modifier.weight(1f),
+          )
+          OutlinedTextField(
+            value = itemUnit,
+            onValueChange = { itemUnit = it },
+            label = { Text("Unit") },
+            singleLine = true,
+            modifier = Modifier.weight(1f),
+          )
         }
       },
-      confirmButton = {
+      bottomButtons = {
+        TextButton(
+          onClick = { showCustomItemDialog = false },
+          modifier = Modifier.heightIn(min = 48.dp),
+        ) {
+          Text("Cancel")
+        }
+        Spacer(Modifier.width(8.dp))
         Button(
           onClick = {
             if (itemName.isNotBlank()) {
@@ -1192,12 +1233,13 @@ fun PosBillingScreen(
               showCustomItemDialog = false
             }
           },
+          shape = RoundedCornerShape(10.dp),
           colors = ButtonDefaults.buttonColors(containerColor = SaffronOrange),
+          modifier = Modifier.heightIn(min = 48.dp),
         ) {
-          Text("Add", color = Color.White)
+          Text("Add", color = Color.White, fontWeight = FontWeight.Bold)
         }
       },
-      dismissButton = { TextButton(onClick = { showCustomItemDialog = false }) { Text("Cancel") } },
     )
   }
 }
@@ -1274,7 +1316,11 @@ fun InvoicePreviewScreen(
         shadowElevation = 10.dp,
         modifier = Modifier.navigationBarsPadding(),
       ) {
-        Column(modifier = Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(
+          modifier =
+            Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 16.dp),
+          verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
           Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp),

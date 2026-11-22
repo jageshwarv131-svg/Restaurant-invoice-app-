@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -71,6 +72,7 @@ import com.example.model.Product
 import com.example.pdf.ReportExporter
 import com.example.pdf.ShareAndPrintHelper
 import com.example.ui.components.EmptyStatePanel
+import com.example.ui.components.VyaparFormDialog
 import com.example.ui.components.VyaparTopBar
 import com.example.ui.theme.AlertRed
 import com.example.ui.theme.CharcoalHeader
@@ -722,66 +724,71 @@ fun ExpensesScreen(
     var method by remember { mutableStateOf(PaymentMethod.CASH) }
     var notes by remember { mutableStateOf("") }
 
-    AlertDialog(
-      onDismissRequest = { showAddDialog = false },
-      title = { Text("Add Expense") },
-      text = {
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-          OutlinedTextField(
-            value = title,
-            onValueChange = { title = it },
-            label = { Text("Expense Title *") },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth(),
-          )
-          OutlinedTextField(
-            value = amount,
-            onValueChange = { amount = it },
-            label = { Text("Amount ($currencySymbol) *") },
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth(),
-          )
-          Text("Category", style = MaterialTheme.typography.labelMedium)
-          Row(
-            modifier = Modifier.horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-          ) {
-            ExpenseCategory.entries.forEach { cat ->
-              FilterChip(
-                selected = category == cat,
-                onClick = { category = cat },
-                label = { Text(cat.label, fontSize = 11.sp) },
-                colors =
-                  FilterChipDefaults.filterChipColors(
-                    selectedContainerColor = SaffronOrange,
-                    selectedLabelColor = Color.White,
-                  ),
-              )
-            }
+    VyaparFormDialog(
+      title = "Add Expense",
+      onDismiss = { showAddDialog = false },
+      scrollContent = {
+        OutlinedTextField(
+          value = title,
+          onValueChange = { title = it },
+          label = { Text("Expense Title *") },
+          singleLine = true,
+          modifier = Modifier.fillMaxWidth(),
+        )
+        OutlinedTextField(
+          value = amount,
+          onValueChange = { amount = it },
+          label = { Text("Amount ($currencySymbol) *") },
+          keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+          singleLine = true,
+          modifier = Modifier.fillMaxWidth(),
+        )
+        Text("Category", style = MaterialTheme.typography.labelMedium)
+        Row(
+          modifier = Modifier.horizontalScroll(rememberScrollState()),
+          horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+          ExpenseCategory.entries.forEach { cat ->
+            FilterChip(
+              selected = category == cat,
+              onClick = { category = cat },
+              label = { Text(cat.label, fontSize = 11.sp) },
+              colors =
+                FilterChipDefaults.filterChipColors(
+                  selectedContainerColor = SaffronOrange,
+                  selectedLabelColor = Color.White,
+                ),
+            )
           }
-          Row(
-            modifier = Modifier.horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-          ) {
-            listOf(PaymentMethod.CASH, PaymentMethod.UPI, PaymentMethod.BANK_TRANSFER, PaymentMethod.CARD).forEach { m ->
-              FilterChip(
-                selected = method == m,
-                onClick = { method = m },
-                label = { Text(m.label, fontSize = 11.sp) },
-              )
-            }
-          }
-          OutlinedTextField(
-            value = notes,
-            onValueChange = { notes = it },
-            label = { Text("Notes") },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth(),
-          )
         }
+        Row(
+          modifier = Modifier.horizontalScroll(rememberScrollState()),
+          horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+          listOf(PaymentMethod.CASH, PaymentMethod.UPI, PaymentMethod.BANK_TRANSFER, PaymentMethod.CARD).forEach { m ->
+            FilterChip(
+              selected = method == m,
+              onClick = { method = m },
+              label = { Text(m.label, fontSize = 11.sp) },
+            )
+          }
+        }
+        OutlinedTextField(
+          value = notes,
+          onValueChange = { notes = it },
+          label = { Text("Notes") },
+          singleLine = true,
+          modifier = Modifier.fillMaxWidth(),
+        )
       },
-      confirmButton = {
+      bottomButtons = {
+        TextButton(
+          onClick = { showAddDialog = false },
+          modifier = Modifier.heightIn(min = 48.dp),
+        ) {
+          Text("Cancel")
+        }
+        Spacer(Modifier.width(8.dp))
         Button(
           onClick = {
             if (title.isNotBlank()) {
@@ -798,12 +805,13 @@ fun ExpensesScreen(
               showAddDialog = false
             }
           },
+          shape = RoundedCornerShape(10.dp),
           colors = ButtonDefaults.buttonColors(containerColor = SaffronOrange),
+          modifier = Modifier.heightIn(min = 48.dp),
         ) {
-          Text("Save", color = Color.White)
+          Text("Save", color = Color.White, fontWeight = FontWeight.Bold)
         }
       },
-      dismissButton = { TextButton(onClick = { showAddDialog = false }) { Text("Cancel") } },
     )
   }
 }
