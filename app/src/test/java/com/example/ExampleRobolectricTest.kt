@@ -11,6 +11,8 @@ import com.example.model.BusinessProfile
 import com.example.model.Customer
 import com.example.model.GstTaxMode
 import com.example.model.GstTaxType
+import com.example.model.MovementType
+import com.example.model.OrderStatus
 import com.example.model.PaperFormat
 import com.example.model.PaymentMethod
 import com.example.model.Product
@@ -232,5 +234,149 @@ class ExampleRobolectricTest {
     assertEquals("9123456780", vm.cart.value.customerMobile)
     assertEquals("MG Road", vm.cart.value.customerAddress)
     assertEquals("27AAAAA0000A1Z5", vm.cart.value.customerGstin)
+  }
+
+  @Test
+  fun `pending orders full lifecycle create edit dedup confirm to invoice and cancel`() = runTest {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val storage = JsonStorageManager(context)
+    val repo = VyaparRepository(storage)
+    repo.loadAll()
+
+    repo.upsertProduct(
+      Product(
+        id = "prod_rice",
+        name = "Basmati Rice",
+        category = "Grocery",
+        sellingPricePaise = 10000L, // ₹100
+        stockQty = 20.0,
+        unit = "Kg",
+        gstPercent = 5.0,
+      )
+    )
+
+    // 1. Create pending order with new customer -> auto-saves customer & prevents duplicates by mobile
+    val order1 =
+      repo.createOrder(
+        customer = null,
+        customerName = "Vikram Singh",
+        customerMobile = "9811223344",
+        items =
+          listOf(
+            CartLineInput(
+              productId = "prod_rice",
+              name = "Basmati Rice",
+              unit = "Kg",
+              quantity = 2.0,
+              unitPricePaise = 10000L,
+              gstPercent = 5.0,
+            )
+          ),
+        notes = "Pack in 2 bags",
+      )
+    assertEquals(OrderStatus.PENDING, order1.status)
+    assertEquals(1, repo.customers.value.size)
+    assertEquals("9811223344", repo.customers.value.first().mobile)
+
+    // Trying to add duplicate mobile with +91 prefix reuses the same customer
+    val dedupCust = repo.findOrCreateCustomerByMobile("Vikram S", "+91 9811223344")
+    assertEquals(1, repo.customers.value.size)
+    assertEquals(repo.customers.value.first().id, dedupCust?.id)
+
+    // Stock is NOT deducted while order is still pending
+    assertEquals(20.0, repo.products.value.first().stockQty, 0.01)
+
+    // 2. Edit pending order before confirmation
+    val edited =
+      repo.updatePendingOrder(
+        orderId = order1.id,
+        customer = dedupCust,
+        customerName = "Vikram Singh",
+        customerMobile = "9811223344",
+        items =
+          listOf(
+            CartLineInput(
+              productId = "prod_rice",
+              name = "Basmati Rice",
+              unit = "Kg",
+              quantity = 3.0,
+              unitPricePaise = 10000L,
+              gstPercent = 5.0,
+            )
+          ),
+        notes = "Updated to 3kg",
+      )
+    assertEquals(3.0, edited!!.items.first().quantity, 0.01)
+
+    // 3. Confirm pending order with edited final rate (₹120/kg), ₹20 extra discount, partial Udhaar
+    // Subtotal = 3 * 120 = 360, Discount = 20 -> Taxable = 340, GST 5% = 17, Total = 357 (35700 paise)
+    val invoice =
+      repo.confirmOrderAndCreateInvoice(
+        order = edited,
+        finalItems =
+          listOf(
+            CartLineInput(
+              productId = "prod_rice",
+              name = "Basmati Rice",
+              unit = "Kg",
+              quantity = 3.0,
+              unitPricePaise = 12000L,
+              gstPercent = 5.0,
+            )
+          ),
+        discountValue = 20.0,
+        isPercentageDiscount = false,
+        taxType = GstTaxType.INTRA_STATE_CGST_SGST,
+        taxMode = GstTaxMode.EXCLUSIVE,
+        paymentMethod = PaymentMethod.CREDIT,
+        amountPaidPaise = 15700L, // ₹157 paid, ₹200 Udhaar
+        notes = "Settled at counter",
+      )
+
+    assertEquals(35700L, invoice.grandTotalPaise)
+    assertEquals(15700L, invoice.amountPaidPaise)
+    assertEquals(20000L, invoice.balanceDuePaise)
+    assertEquals(1, repo.invoices.value.size)
+
+    // Order kept in history as COMPLETED and linked to invoice
+    val completedOrder = repo.orders.value.first { it.id == order1.id }
+    assertEquals(OrderStatus.COMPLETED, completedOrder.status)
+    assertEquals(invoice.id, completedOrder.linkedInvoiceId)
+    assertEquals(35700L, completedOrder.totalPaise)
+
+    // Stock deducted & ledger updated
+    assertEquals(17.0, repo.products.value.first().stockQty, 0.01)
+    assertTrue(repo.inventoryMovements.value.any { it.type == MovementType.SALE && it.quantityDelta == -3.0 })
+    assertEquals(35700L, repo.customers.value.first().totalPurchasesPaise)
+    assertEquals(20000L, repo.customers.value.first().outstandingBalancePaise)
+
+    // 4. Create & cancel another pending order -> stock unchanged, order remains in Cancelled history
+    val order2 =
+      repo.createOrder(
+        customer = null,
+        customerName = "Sunita Devi",
+        customerMobile = "9900112233",
+        items =
+          listOf(
+            CartLineInput(
+              productId = "prod_rice",
+              name = "Basmati Rice",
+              unit = "Kg",
+              quantity = 2.0,
+              unitPricePaise = 10000L,
+              gstPercent = 5.0,
+            )
+          ),
+        notes = "",
+      )
+    repo.updateOrderStatus(order2.id, OrderStatus.CANCELLED)
+
+    // Reload repository from JSON storage to verify full local persistence
+    val repoReloaded = VyaparRepository(JsonStorageManager(context))
+    repoReloaded.loadAll()
+    assertEquals(2, repoReloaded.orders.value.size)
+    assertEquals(OrderStatus.COMPLETED, repoReloaded.orders.value.first { it.id == order1.id }.status)
+    assertEquals(OrderStatus.CANCELLED, repoReloaded.orders.value.first { it.id == order2.id }.status)
+    assertEquals(17.0, repoReloaded.products.value.first().stockQty, 0.01)
   }
 }

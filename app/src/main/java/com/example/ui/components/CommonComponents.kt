@@ -64,9 +64,17 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.DialogWindowProvider
 import androidx.core.view.WindowCompat
 import com.example.ui.theme.AlertRed
-import com.example.ui.theme.CharcoalHeader
+import com.example.ui.theme.AlertRedSoft
+import com.example.ui.theme.BorderGreyDark
+import com.example.ui.theme.CharcoalSurface
 import com.example.ui.theme.EmeraldGreen
+import com.example.ui.theme.EmeraldGreenDark
+import com.example.ui.theme.EmeraldGreenSoft
+import com.example.ui.theme.LocalVyaparDarkTheme
 import com.example.ui.theme.SaffronOrange
+import com.example.ui.theme.SlateText
+import com.example.ui.theme.WarmCreamBorder
+import com.example.ui.theme.WarmCreamHeader
 
 @Immutable
 data class AppSafeInsets(
@@ -89,6 +97,95 @@ fun rememberSafeBottomPadding(extraPadding: Dp = 20.dp): Dp {
 }
 
 @Composable
+fun vyaparTopBarContainerColor(): Color =
+  if (LocalVyaparDarkTheme.current) CharcoalSurface else WarmCreamHeader
+
+@Composable
+fun vyaparTopBarContentColor(): Color =
+  if (LocalVyaparDarkTheme.current) Color(0xFFF9FAFB) else SlateText
+
+@Composable
+fun vyaparTopBarDividerColor(): Color =
+  if (LocalVyaparDarkTheme.current) BorderGreyDark else WarmCreamBorder
+
+@Composable
+fun ShopStatusBadge(
+  isShopOpen: Boolean,
+  onToggleShopStatus: (() -> Unit)?,
+  modifier: Modifier = Modifier,
+) {
+  val isDark = LocalVyaparDarkTheme.current
+  val bgColor =
+    when {
+      isShopOpen && isDark -> EmeraldGreen.copy(alpha = 0.22f)
+      isShopOpen -> EmeraldGreenSoft
+      isDark -> AlertRed.copy(alpha = 0.24f)
+      else -> AlertRedSoft
+    }
+  val borderColor =
+    when {
+      isShopOpen && isDark -> EmeraldGreen.copy(alpha = 0.75f)
+      isShopOpen -> EmeraldGreen.copy(alpha = 0.55f)
+      isDark -> AlertRed.copy(alpha = 0.85f)
+      else -> AlertRed.copy(alpha = 0.55f)
+    }
+  val accentColor =
+    when {
+      isShopOpen && isDark -> Color(0xFF4ADE80)
+      isShopOpen -> EmeraldGreen
+      isDark -> Color(0xFFFCA5A5)
+      else -> AlertRed
+    }
+  val labelColor =
+    when {
+      isDark -> Color.White
+      isShopOpen -> EmeraldGreenDark
+      else -> AlertRed
+    }
+
+  Surface(
+    shape = RoundedCornerShape(50),
+    color = bgColor,
+    border = BorderStroke(1.dp, borderColor),
+    modifier =
+      modifier
+        .clip(RoundedCornerShape(50))
+        .then(
+          if (onToggleShopStatus != null) Modifier.clickable(onClick = onToggleShopStatus)
+          else Modifier
+        ),
+  ) {
+    Row(
+      modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+      verticalAlignment = Alignment.CenterVertically,
+    ) {
+      Box(
+        modifier =
+          Modifier.size(8.dp)
+            .clip(CircleShape)
+            .background(accentColor)
+      )
+      Spacer(Modifier.width(5.dp))
+      Icon(
+        imageVector = Icons.Filled.Storefront,
+        contentDescription =
+          if (isShopOpen) "Shop Online Open, tap to close"
+          else "Shop Offline Closed, tap to open",
+        tint = accentColor,
+        modifier = Modifier.size(13.dp),
+      )
+      Spacer(Modifier.width(4.dp))
+      Text(
+        text = if (isShopOpen) "Online" else "Offline • Closed",
+        color = labelColor,
+        fontSize = 11.sp,
+        fontWeight = FontWeight.Bold,
+      )
+    }
+  }
+}
+
+@Composable
 fun VyaparTopBar(
   title: String,
   isShopOpen: Boolean,
@@ -99,117 +196,81 @@ fun VyaparTopBar(
   alertCount: Int = 0,
   trailingContent: @Composable (() -> Unit)? = null,
 ) {
-  Surface(color = CharcoalHeader, contentColor = Color.White, tonalElevation = 0.dp) {
-    Row(
-      modifier =
-        Modifier.fillMaxWidth()
-          .statusBarsPadding()
-          .height(60.dp)
-          .padding(horizontal = 8.dp),
-      verticalAlignment = Alignment.CenterVertically,
-    ) {
-      IconButton(
-        onClick = onBackOrMenuClick,
-        modifier = Modifier.testTag(if (showBack) "top_bar_back" else "top_bar_menu"),
-      ) {
-        Icon(
-          imageVector =
-            if (showBack) Icons.AutoMirrored.Filled.ArrowBack else Icons.Filled.Menu,
-          contentDescription = if (showBack) "Back" else "Open navigation menu",
-          tint = Color.White,
-        )
-      }
+  val containerColor = vyaparTopBarContainerColor()
+  val contentColor = vyaparTopBarContentColor()
 
-      Text(
-        text = title,
-        style = MaterialTheme.typography.titleLarge,
-        color = Color.White,
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
-        modifier = Modifier.weight(1f).padding(start = 4.dp),
-      )
-
-      // Interactive Shop Status Toggle: Online (Shop Open) vs Offline (Dukan Close)
-      Surface(
-        shape = RoundedCornerShape(50),
-        color =
-          if (isShopOpen) EmeraldGreen.copy(alpha = 0.20f)
-          else AlertRed.copy(alpha = 0.24f),
-        border =
-          BorderStroke(
-            1.dp,
-            if (isShopOpen) EmeraldGreen.copy(alpha = 0.75f)
-            else AlertRed.copy(alpha = 0.85f),
-          ),
+  Surface(color = containerColor, contentColor = contentColor, tonalElevation = 0.dp) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+      Row(
         modifier =
-          Modifier.padding(end = 6.dp)
-            .clip(RoundedCornerShape(50))
-            .then(
-              if (onToggleShopStatus != null) Modifier.clickable(onClick = onToggleShopStatus)
-              else Modifier
-            )
-            .testTag("shop_status_toggle"),
+          Modifier.fillMaxWidth()
+            .statusBarsPadding()
+            .height(60.dp)
+            .padding(horizontal = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
       ) {
-        Row(
-          modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-          verticalAlignment = Alignment.CenterVertically,
+        IconButton(
+          onClick = onBackOrMenuClick,
+          modifier = Modifier.testTag(if (showBack) "top_bar_back" else "top_bar_menu"),
         ) {
-          Box(
-            modifier =
-              Modifier.size(8.dp)
-                .clip(CircleShape)
-                .background(if (isShopOpen) Color(0xFF4ADE80) else Color(0xFFFCA5A5))
-          )
-          Spacer(Modifier.width(5.dp))
           Icon(
-            imageVector = Icons.Filled.Storefront,
-            contentDescription = if (isShopOpen) "Shop Online Open, tap to close" else "Shop Offline Closed, tap to open",
-            tint = if (isShopOpen) Color(0xFF4ADE80) else Color(0xFFFCA5A5),
-            modifier = Modifier.size(13.dp),
-          )
-          Spacer(Modifier.width(4.dp))
-          Text(
-            text = if (isShopOpen) "Online" else "Offline • Closed",
-            color = Color.White,
-            fontSize = 11.sp,
-            fontWeight = FontWeight.Bold,
+            imageVector =
+              if (showBack) Icons.AutoMirrored.Filled.ArrowBack else Icons.Filled.Menu,
+            contentDescription = if (showBack) "Back" else "Open navigation menu",
+            tint = contentColor,
           )
         }
-      }
 
-      if (trailingContent != null) {
-        trailingContent()
-      }
+        Text(
+          text = title,
+          style = MaterialTheme.typography.titleLarge,
+          color = contentColor,
+          maxLines = 1,
+          overflow = TextOverflow.Ellipsis,
+          modifier = Modifier.weight(1f).padding(start = 4.dp),
+        )
 
-      if (onAlertClick != null) {
-        Box {
-          IconButton(onClick = onAlertClick, modifier = Modifier.testTag("top_bar_alerts")) {
-            Icon(
-              imageVector = Icons.Filled.NotificationsNone,
-              contentDescription = "Inventory and Payment Alerts",
-              tint = Color.White,
-            )
-          }
-          if (alertCount > 0) {
-            Box(
-              modifier =
-                Modifier.align(Alignment.TopEnd)
-                  .padding(top = 8.dp, end = 8.dp)
-                  .size(16.dp)
-                  .clip(CircleShape)
-                  .background(SaffronOrange),
-              contentAlignment = Alignment.Center,
-            ) {
-              Text(
-                text = if (alertCount > 9) "9+" else "$alertCount",
-                color = Color.White,
-                fontSize = 9.sp,
-                fontWeight = FontWeight.Bold,
+        ShopStatusBadge(
+          isShopOpen = isShopOpen,
+          onToggleShopStatus = onToggleShopStatus,
+          modifier = Modifier.padding(end = 6.dp).testTag("shop_status_toggle"),
+        )
+
+        if (trailingContent != null) {
+          trailingContent()
+        }
+
+        if (onAlertClick != null) {
+          Box {
+            IconButton(onClick = onAlertClick, modifier = Modifier.testTag("top_bar_alerts")) {
+              Icon(
+                imageVector = Icons.Filled.NotificationsNone,
+                contentDescription = "Inventory and Payment Alerts",
+                tint = contentColor,
               )
+            }
+            if (alertCount > 0) {
+              Box(
+                modifier =
+                  Modifier.align(Alignment.TopEnd)
+                    .padding(top = 8.dp, end = 8.dp)
+                    .size(16.dp)
+                    .clip(CircleShape)
+                    .background(SaffronOrange),
+                contentAlignment = Alignment.Center,
+              ) {
+                Text(
+                  text = if (alertCount > 9) "9+" else "$alertCount",
+                  color = Color.White,
+                  fontSize = 9.sp,
+                  fontWeight = FontWeight.Bold,
+                )
+              }
             }
           }
         }
       }
+      HorizontalDivider(thickness = 1.dp, color = vyaparTopBarDividerColor())
     }
   }
 }

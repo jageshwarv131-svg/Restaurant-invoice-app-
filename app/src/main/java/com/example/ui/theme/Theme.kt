@@ -1,13 +1,30 @@
 package com.example.ui.theme
 
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
+import androidx.core.view.WindowCompat
+
+val LocalVyaparDarkTheme = compositionLocalOf { false }
+
+private tailrec fun Context.findActivity(): Activity? =
+  when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
+  }
 
 private val VyaparDarkColorScheme =
   darkColorScheme(
@@ -73,14 +90,27 @@ val VyaparShapes =
 @Composable
 fun VyaparBillingTheme(
   darkTheme: Boolean = false,
+  lightStatusBar: Boolean = !darkTheme,
   content: @Composable () -> Unit,
 ) {
   val colorScheme = if (darkTheme) VyaparDarkColorScheme else VyaparLightColorScheme
+  val view = LocalView.current
+  if (!view.isInEditMode) {
+    SideEffect {
+      view.context.findActivity()?.window?.let { window ->
+        val controller = WindowCompat.getInsetsController(window, view)
+        controller.isAppearanceLightStatusBars = lightStatusBar
+        controller.isAppearanceLightNavigationBars = !darkTheme
+      }
+    }
+  }
 
-  MaterialTheme(
-    colorScheme = colorScheme,
-    typography = VyaparTypography,
-    shapes = VyaparShapes,
-    content = content,
-  )
+  CompositionLocalProvider(LocalVyaparDarkTheme provides darkTheme) {
+    MaterialTheme(
+      colorScheme = colorScheme,
+      typography = VyaparTypography,
+      shapes = VyaparShapes,
+      content = content,
+    )
+  }
 }

@@ -193,19 +193,83 @@ class VyaparRepository(private val storage: JsonStorageManager) {
     storage.writeInventoryMovements(updated)
   }
 
+  fun normalizeMobile10(raw: String): String {
+    val digits = raw.filter { it.isDigit() }
+    return if (digits.length >= 10) digits.takeLast(10) else digits
+  }
+
+  suspend fun findOrCreateCustomerByMobile(
+    name: String,
+    mobile: String,
+    address: String = "",
+    gstin: String = "",
+  ): Customer? {
+    val normMobile = normalizeMobile10(mobile)
+    val trimmedName = name.trim()
+    if (trimmedName.isBlank() && normMobile.isBlank()) return null
+
+    if (normMobile.length == 10) {
+      val existing =
+        _customers.value.firstOrNull { normalizeMobile10(it.mobile) == normMobile }
+      if (existing != null) {
+        if (existing.name.isBlank() && trimmedName.isNotBlank()) {
+          return upsertCustomer(existing.copy(name = trimmedName))
+        }
+        return existing
+      }
+    }
+
+    return upsertCustomer(
+      Customer(
+        id = "",
+        name = trimmedName.ifBlank { normMobile },
+        mobile = normMobile.ifBlank { mobile.trim() },
+        whatsapp = normMobile.ifBlank { mobile.trim() },
+        address = address.trim(),
+        gstin = gstin.trim().uppercase(Locale.US),
+      )
+    )
+  }
+
   suspend fun upsertCustomer(customer: Customer): Customer {
     val now = System.currentTimeMillis()
     val current = _customers.value.toMutableList()
-    val idx = current.indexOfFirst { it.id == customer.id }
+    val normMobile = normalizeMobile10(customer.mobile)
+    val idx =
+      if (customer.id.isNotBlank()) {
+        current.indexOfFirst { it.id == customer.id }
+      } else if (normMobile.length == 10) {
+        current.indexOfFirst { normalizeMobile10(it.mobile) == normMobile }
+      } else {
+        -1
+      }
     val saved =
       if (idx >= 0) {
-        val updated = customer.copy(updatedAt = now)
+        val existing = current[idx]
+        val updated =
+          if (customer.id.isBlank()) {
+            existing.copy(
+              name = customer.name.ifBlank { existing.name },
+              mobile = normMobile.ifBlank { customer.mobile.ifBlank { existing.mobile } },
+              whatsapp = existing.whatsapp.ifBlank { normMobile.ifBlank { customer.whatsapp } },
+              address = customer.address.ifBlank { existing.address },
+              gstin = customer.gstin.ifBlank { existing.gstin },
+              updatedAt = now,
+            )
+          } else {
+            customer.copy(updatedAt = now)
+          }
         current[idx] = updated
         updated
       } else {
         val created =
           customer.copy(
             id = customer.id.ifBlank { UUID.randomUUID().toString() },
+            mobile = if (normMobile.length == 10) normMobile else customer.mobile.trim(),
+            whatsapp =
+              customer.whatsapp.ifBlank {
+                if (normMobile.length == 10) normMobile else customer.mobile.trim()
+              },
             createdAt = now,
             updatedAt = now,
           )
@@ -392,9 +456,17 @@ class VyaparRepository(private val storage: JsonStorageManager) {
 
   suspend fun createOrder(
     customer: Customer?,
+    customerName: String = "",
+    customerMobile: String = "",
     items: List<CartLineInput>,
     notes: String,
   ): Order {
+    val resolvedCustomer =
+      customer
+        ?: findOrCreateCustomerByMobile(
+          name = customerName,
+          mobile = customerMobile,
+        )
     val calc =
       BillingCalculator.calculate(
         items = items,
@@ -405,15 +477,24 @@ class VyaparRepository(private val storage: JsonStorageManager) {
         autoRoundOff = _settings.value.autoRoundOff,
       )
     val now = System.currentTimeMillis()
-    val orderNumber = "ORD-%04d".format(Locale.US, _orders.value.size + 1)
+    val maxNum =
+      _orders.value.mapNotNull { it.orderNumber.substringAfterLast("-").toIntOrNull() }.maxOrNull() ?: 0
+    val orderNumber = "ORD-%04d".format(Locale.US, maxNum + 1)
+    val finalName =
+      resolvedCustomer?.name?.takeIf { it.isNotBlank() }
+        ?: customerName.trim().ifBlank { "Walk-in Customer" }
+    val finalMobile =
+      resolvedCustomer?.mobile?.takeIf { it.isNotBlank() }
+        ?: normalizeMobile10(customerMobile).ifBlank { customerMobile.trim() }
+
     val order =
       Order(
         id = UUID.randomUUID().toString(),
         orderNumber = orderNumber,
         timestamp = now,
-        customerId = customer?.id,
-        customerName = customer?.name ?: "Walk-in Customer",
-        customerMobile = customer?.mobile ?: "",
+        customerId = resolvedCustomer?.id,
+        customerName = finalName,
+        customerMobile = finalMobile,
         items = calc.computedItems,
         totalPaise = calc.grandTotalPaise,
         status = OrderStatus.PENDING,
@@ -424,6 +505,118 @@ class VyaparRepository(private val storage: JsonStorageManager) {
     _orders.value = updated
     storage.writeOrders(updated)
     return order
+  }
+
+  suspend fun updatePendingOrder(
+    orderId: String,
+    customer: Customer?,
+    customerName: String,
+    customerMobile: String,
+    items: List<CartLineInput>,
+    discountValue: Double = 0.0,
+    isPercentageDiscount: Boolean = false,
+    notes: String,
+  ): Order? {
+    val current = _orders.value.toMutableList()
+    val idx = current.indexOfFirst { it.id == orderId }
+    if (idx < 0) return null
+    val existing = current[idx]
+    if (existing.status == OrderStatus.COMPLETED || existing.status == OrderStatus.CANCELLED) {
+      return existing
+    }
+
+    val resolvedCustomer =
+      customer
+        ?: findOrCreateCustomerByMobile(
+          name = customerName,
+          mobile = customerMobile,
+        )
+    val calc =
+      BillingCalculator.calculate(
+        items = items,
+        discountValue = discountValue,
+        isPercentageDiscount = isPercentageDiscount,
+        taxType = _settings.value.defaultTaxType,
+        taxMode = _settings.value.defaultTaxMode,
+        autoRoundOff = _settings.value.autoRoundOff,
+      )
+    val finalName =
+      resolvedCustomer?.name?.takeIf { it.isNotBlank() }
+        ?: customerName.trim().ifBlank { existing.customerName }
+    val finalMobile =
+      resolvedCustomer?.mobile?.takeIf { it.isNotBlank() }
+        ?: normalizeMobile10(customerMobile).ifBlank { customerMobile.trim() }
+
+    val updatedOrder =
+      existing.copy(
+        customerId = resolvedCustomer?.id ?: existing.customerId,
+        customerName = finalName,
+        customerMobile = finalMobile,
+        items = calc.computedItems,
+        discountInput = discountValue,
+        isPercentageDiscount = isPercentageDiscount,
+        totalPaise = calc.grandTotalPaise,
+        notes = notes,
+        updatedAt = System.currentTimeMillis(),
+      )
+    current[idx] = updatedOrder
+    _orders.value = current
+    storage.writeOrders(current)
+    return updatedOrder
+  }
+
+  suspend fun confirmOrderAndCreateInvoice(
+    order: Order,
+    finalItems: List<CartLineInput>,
+    discountValue: Double,
+    isPercentageDiscount: Boolean,
+    taxType: GstTaxType,
+    taxMode: GstTaxMode,
+    paymentMethod: PaymentMethod,
+    amountPaidPaise: Long,
+    notes: String,
+  ): Invoice {
+    val resolvedCustomer =
+      order.customerId?.let { id -> _customers.value.firstOrNull { it.id == id } }
+        ?: findOrCreateCustomerByMobile(order.customerName, order.customerMobile)
+
+    val invoice =
+      completeSaleAndCreateInvoice(
+        customer = resolvedCustomer,
+        cartItems = finalItems,
+        discountValue = discountValue,
+        isPercentageDiscount = isPercentageDiscount,
+        taxType = taxType,
+        taxMode = taxMode,
+        paymentMethod = paymentMethod,
+        amountPaidPaise = amountPaidPaise,
+        notes = notes.ifBlank { "Order ${order.orderNumber}" },
+        customCustomerName = order.customerName,
+        customCustomerMobile = order.customerMobile,
+      )
+
+    val current = _orders.value.toMutableList()
+    val idx = current.indexOfFirst { it.id == order.id }
+    if (idx >= 0) {
+      current[idx] =
+        current[idx].copy(
+          customerId = resolvedCustomer?.id ?: current[idx].customerId,
+          customerName = invoice.customerName,
+          customerMobile = invoice.customerMobile,
+          items = invoice.items,
+          discountInput = discountValue,
+          isPercentageDiscount = isPercentageDiscount,
+          totalPaise = invoice.grandTotalPaise,
+          status = OrderStatus.COMPLETED,
+          linkedInvoiceId = invoice.id,
+          notes = notes,
+          updatedAt = System.currentTimeMillis(),
+        )
+      _orders.value = current
+      storage.writeOrders(current)
+    }
+
+    return invoice
   }
 
   suspend fun updateOrderStatus(orderId: String, newStatus: OrderStatus) {

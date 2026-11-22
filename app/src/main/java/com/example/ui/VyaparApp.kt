@@ -93,6 +93,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.example.R
+import com.example.model.OrderStatus
 import com.example.ui.components.AppSafeInsets
 import com.example.ui.components.LocalAppSafeInsets
 import com.example.ui.components.VyaparTopBar
@@ -173,6 +174,7 @@ fun VyaparBillingApp(vm: VyaparViewModel = viewModel()) {
 
   var openAddProductDialog by remember { mutableStateOf(false) }
   var openAddCustomerDialog by remember { mutableStateOf(false) }
+  var openNewOrderDialog by remember { mutableStateOf(false) }
   var showAlertsDialog by remember { mutableStateOf(false) }
 
   val snackbarHostState = remember { SnackbarHostState() }
@@ -191,7 +193,13 @@ fun VyaparBillingApp(vm: VyaparViewModel = viewModel()) {
     if (backStack.isNotEmpty()) backStack.removeAt(backStack.lastIndex)
   }
 
-  VyaparBillingTheme(darkTheme = settings.darkMode) {
+  val isDarkFullScreen =
+    showSplash || !isLoaded || (settings.appPinEnabled && !isUnlocked) || !settings.onboardingCompleted
+
+  VyaparBillingTheme(
+    darkTheme = settings.darkMode,
+    lightStatusBar = !settings.darkMode && !isDarkFullScreen,
+  ) {
     val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     val navBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     val imeBottom = WindowInsets.ime.asPaddingValues().calculateBottomPadding()
@@ -322,7 +330,7 @@ fun VyaparBillingApp(vm: VyaparViewModel = viewModel()) {
                     icon = { Icon(Icons.Filled.Group, contentDescription = null) },
                   )
                   NavigationDrawerItem(
-                    label = { Text("Orders") },
+                    label = { Text("Pending Orders") },
                     selected = activeSubScreen == SubScreen.ORDERS,
                     onClick = { navFromDrawer(sub = SubScreen.ORDERS) },
                     icon = { Icon(Icons.Filled.LocalShipping, contentDescription = null) },
@@ -449,16 +457,52 @@ fun VyaparBillingApp(vm: VyaparViewModel = viewModel()) {
                   orders = orders,
                   products = products,
                   customers = customers,
+                  invoices = invoices,
+                  defaultTaxType = settings.defaultTaxType,
+                  defaultTaxMode = settings.defaultTaxMode,
+                  autoRoundOff = settings.autoRoundOff,
                   currencySymbol = sym,
                   isShopOpen = isShopOpen,
+                  openNewOrderImmediately = openNewOrderDialog,
+                  onConsumeOpenNewOrder = { openNewOrderDialog = false },
                   onToggleShopStatus = { vm.toggleShopOpen() },
                   onBack = { popSubScreen() },
-                  onCreateOrder = { cust, items, notes -> vm.createOrder(cust, items, notes) },
-                  onUpdateStatus = { id, st -> vm.updateOrderStatus(id, st) },
-                  onConvertOrderToInvoice = { order ->
-                    vm.convertOrderToInvoice(order) {
+                  onCreateInlineCustomer = { name, mobile, onSaved ->
+                    vm.createInlineCustomer(name, mobile, onSaved)
+                  },
+                  onCreateOrder = { cust, name, mobile, items, notes ->
+                    vm.createOrder(cust, name, mobile, items, notes)
+                  },
+                  onUpdatePendingOrder = { orderId, cust, name, mobile, items, discountVal, isPct, notes ->
+                    vm.updatePendingOrder(
+                      orderId = orderId,
+                      customer = cust,
+                      customerName = name,
+                      customerMobile = mobile,
+                      items = items,
+                      discountValue = discountVal,
+                      isPercentageDiscount = isPct,
+                      notes = notes,
+                    )
+                  },
+                  onCancelOrder = { id -> vm.updateOrderStatus(id, OrderStatus.CANCELLED) },
+                  onConfirmOrder = { order, finalItems, discountVal, isPct, taxType, taxMode, method, paidPaise, notes ->
+                    vm.confirmOrderAndOpenInvoice(
+                      order = order,
+                      finalItems = finalItems,
+                      discountValue = discountVal,
+                      isPercentageDiscount = isPct,
+                      taxType = taxType,
+                      taxMode = taxMode,
+                      paymentMethod = method,
+                      amountPaidPaise = paidPaise,
+                      notes = notes,
+                    ) {
                       pushSubScreen(SubScreen.INVOICE_PREVIEW)
                     }
+                  },
+                  onOpenInvoicePreview = { inv ->
+                    vm.openInvoicePreview(inv) { pushSubScreen(SubScreen.INVOICE_PREVIEW) }
                   },
                 )
               }
@@ -635,13 +679,20 @@ fun VyaparBillingApp(vm: VyaparViewModel = viewModel()) {
                               },
                               onOpenCustomers = { pushSubScreen(SubScreen.CUSTOMERS) },
                               onOpenProducts = { currentTab = BottomTab.PRODUCTS },
+                              onOpenOrders = { pushSubScreen(SubScreen.ORDERS) },
                             )
                           }
                           BottomTab.BILLS -> {
                             BillsHistoryScreen(
                               invoices = invoices,
+                              pendingOrdersCount = metrics.pendingOrdersCount,
                               currencySymbol = sym,
                               onNewBill = { pushSubScreen(SubScreen.POS_BILLING) },
+                              onNewOrder = {
+                                openNewOrderDialog = true
+                                pushSubScreen(SubScreen.ORDERS)
+                              },
+                              onOpenOrders = { pushSubScreen(SubScreen.ORDERS) },
                               onOpenInvoice = { inv ->
                                 vm.openInvoicePreview(inv) {
                                   pushSubScreen(SubScreen.INVOICE_PREVIEW)

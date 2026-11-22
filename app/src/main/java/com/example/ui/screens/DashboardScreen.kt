@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.ReceiptLong
 import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.AddBox
@@ -26,6 +27,7 @@ import androidx.compose.material.icons.filled.AddShoppingCart
 import androidx.compose.material.icons.filled.Assessment
 import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.Inventory2
+import androidx.compose.material.icons.filled.LocalShipping
 import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.Receipt
@@ -104,6 +106,7 @@ fun DashboardScreen(
   onOpenInvoicePreview: (Invoice) -> Unit,
   onOpenCustomers: () -> Unit,
   onOpenProducts: () -> Unit,
+  onOpenOrders: () -> Unit,
 ) {
   val sym = business.currencySymbol.ifBlank { "₹" }
   var chartRange by remember { mutableStateOf(ChartRange.SEVEN_DAYS) }
@@ -278,6 +281,88 @@ fun DashboardScreen(
           modifier = Modifier.weight(1f),
           onClick = onOpenInventory,
         )
+      }
+    }
+
+    // 3b. Pending Orders Card (tap to open Pending Orders)
+    item {
+      Surface(
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surface,
+        tonalElevation = 1.dp,
+        shadowElevation = 2.dp,
+        border =
+          BorderStroke(
+            1.dp,
+            if (metrics.pendingOrdersCount > 0) SaffronOrange.copy(alpha = 0.45f)
+            else MaterialTheme.colorScheme.outline.copy(alpha = 0.35f),
+          ),
+        modifier =
+          Modifier.fillMaxWidth()
+            .clickable(onClick = onOpenOrders)
+            .testTag("dashboard_pending_orders_card"),
+      ) {
+        Row(
+          modifier = Modifier.fillMaxWidth().padding(14.dp),
+          verticalAlignment = Alignment.CenterVertically,
+        ) {
+          Box(
+            modifier =
+              Modifier.size(44.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(AmberGoldSoft),
+            contentAlignment = Alignment.Center,
+          ) {
+            Icon(
+              imageVector = Icons.Filled.LocalShipping,
+              contentDescription = "Pending Orders",
+              tint = SaffronOrangeDark,
+              modifier = Modifier.size(23.dp),
+            )
+          }
+          Spacer(Modifier.width(12.dp))
+          Column(modifier = Modifier.weight(1f)) {
+            Text(
+              text = "Pending Orders",
+              style = MaterialTheme.typography.titleSmall,
+              fontWeight = FontWeight.Bold,
+              color = MaterialTheme.colorScheme.onSurface,
+            )
+            Text(
+              text =
+                if (metrics.pendingOrdersCount > 0)
+                  "${metrics.pendingOrdersCount} order(s) waiting for final bill & payment"
+                else "Take order first, finalize rate & bill later",
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+              maxLines = 1,
+              overflow = TextOverflow.Ellipsis,
+            )
+          }
+          Spacer(Modifier.width(8.dp))
+          Surface(
+            shape = RoundedCornerShape(50),
+            color =
+              if (metrics.pendingOrdersCount > 0) SaffronOrange
+              else MaterialTheme.colorScheme.surfaceVariant,
+          ) {
+            Text(
+              text = metrics.pendingOrdersCount.toString(),
+              color =
+                if (metrics.pendingOrdersCount > 0) Color.White
+                else MaterialTheme.colorScheme.onSurfaceVariant,
+              fontWeight = FontWeight.ExtraBold,
+              fontSize = 13.sp,
+              modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+            )
+          }
+          Spacer(Modifier.width(4.dp))
+          Icon(
+            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+            contentDescription = "Open Pending Orders",
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+          )
+        }
       }
     }
 

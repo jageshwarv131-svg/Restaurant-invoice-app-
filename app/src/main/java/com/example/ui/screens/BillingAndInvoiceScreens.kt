@@ -104,8 +104,12 @@ import com.example.model.Product
 import com.example.pdf.ShareAndPrintHelper
 import com.example.ui.PosCartState
 import com.example.ui.components.EmptyStatePanel
+import com.example.ui.components.ShopStatusBadge
 import com.example.ui.components.VyaparFormDialog
 import com.example.ui.components.rememberSafeBottomPadding
+import com.example.ui.components.vyaparTopBarContainerColor
+import com.example.ui.components.vyaparTopBarContentColor
+import com.example.ui.components.vyaparTopBarDividerColor
 import com.example.ui.theme.AlertRed
 import com.example.ui.theme.CharcoalHeader
 import com.example.ui.theme.EmeraldGreen
@@ -118,8 +122,11 @@ import java.io.File
 @Composable
 fun BillsHistoryScreen(
   invoices: List<Invoice>,
+  pendingOrdersCount: Int,
   currencySymbol: String,
   onNewBill: () -> Unit,
+  onNewOrder: () -> Unit,
+  onOpenOrders: () -> Unit,
   onOpenInvoice: (Invoice) -> Unit,
   onDeleteInvoice: (String) -> Unit,
 ) {
@@ -140,13 +147,28 @@ fun BillsHistoryScreen(
 
   Scaffold(
     floatingActionButton = {
-      FloatingActionButton(
-        onClick = onNewBill,
-        containerColor = SaffronOrange,
-        contentColor = Color.White,
-        modifier = Modifier.testTag("bills_new_bill_fab"),
+      Column(
+        horizontalAlignment = Alignment.End,
+        verticalArrangement = Arrangement.spacedBy(10.dp),
       ) {
-        Icon(Icons.Filled.Add, contentDescription = "New Bill")
+        androidx.compose.material3.ExtendedFloatingActionButton(
+          onClick = onNewOrder,
+          containerColor = MaterialTheme.colorScheme.surface,
+          contentColor = SaffronOrangeDark,
+          modifier = Modifier.testTag("bills_fab_new_order"),
+        ) {
+          Icon(Icons.Filled.AddShoppingCart, contentDescription = null, modifier = Modifier.size(18.dp))
+          Spacer(Modifier.width(6.dp))
+          Text("New Order", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+        }
+        FloatingActionButton(
+          onClick = onNewBill,
+          containerColor = SaffronOrange,
+          contentColor = Color.White,
+          modifier = Modifier.testTag("bills_new_bill_fab"),
+        ) {
+          Icon(Icons.Filled.Add, contentDescription = "New Bill")
+        }
       }
     }
   ) { innerPadding ->
@@ -157,10 +179,9 @@ fun BillsHistoryScreen(
           .padding(innerPadding)
     ) {
       Surface(color = MaterialTheme.colorScheme.surface, tonalElevation = 1.dp) {
-        Row(
-          modifier = Modifier.fillMaxWidth().padding(16.dp),
-          horizontalArrangement = Arrangement.spacedBy(10.dp),
-          verticalAlignment = Alignment.CenterVertically,
+        Column(
+          modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+          verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
           OutlinedTextField(
             value = searchQuery,
@@ -169,8 +190,36 @@ fun BillsHistoryScreen(
             leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
             singleLine = true,
             shape = RoundedCornerShape(14.dp),
-            modifier = Modifier.weight(1f),
+            modifier = Modifier.fillMaxWidth(),
           )
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+          ) {
+            OutlinedButton(
+              onClick = onNewOrder,
+              shape = RoundedCornerShape(10.dp),
+              border = BorderStroke(1.dp, SaffronOrange),
+              modifier = Modifier.weight(1f).height(40.dp).testTag("bills_new_order_btn"),
+            ) {
+              Icon(Icons.Filled.Add, contentDescription = null, tint = SaffronOrange, modifier = Modifier.size(16.dp))
+              Spacer(Modifier.width(4.dp))
+              Text("New Order", color = SaffronOrange, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            }
+            OutlinedButton(
+              onClick = onOpenOrders,
+              shape = RoundedCornerShape(10.dp),
+              modifier = Modifier.weight(1f).height(40.dp).testTag("bills_pending_orders_btn"),
+            ) {
+              Text(
+                text = "Pending Orders ($pendingOrdersCount)",
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+              )
+            }
+          }
         }
       }
 
@@ -325,60 +374,34 @@ fun PosBillingScreen(
 
   Scaffold(
     topBar = {
-      Surface(color = CharcoalHeader, contentColor = Color.White) {
-        Row(
-          modifier =
-            Modifier.fillMaxWidth().statusBarsPadding().height(60.dp).padding(horizontal = 8.dp),
-          verticalAlignment = Alignment.CenterVertically,
-        ) {
-          IconButton(onClick = onBack, modifier = Modifier.testTag("pos_back")) {
-            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
-          }
-          Text(
-            text = "New Bill",
-            style = MaterialTheme.typography.titleLarge,
-            color = Color.White,
-            modifier = Modifier.weight(1f),
-          )
-          Surface(
-            shape = RoundedCornerShape(50),
-            color =
-              if (isShopOpen) EmeraldGreen.copy(alpha = 0.20f)
-              else AlertRed.copy(alpha = 0.24f),
-            border =
-              BorderStroke(
-                1.dp,
-                if (isShopOpen) EmeraldGreen.copy(alpha = 0.75f)
-                else AlertRed.copy(alpha = 0.85f),
-              ),
+      val barBg = vyaparTopBarContainerColor()
+      val barFg = vyaparTopBarContentColor()
+      Surface(color = barBg, contentColor = barFg, tonalElevation = 0.dp) {
+        Column(modifier = Modifier.fillMaxWidth()) {
+          Row(
             modifier =
-              Modifier.padding(end = 4.dp)
-                .clip(RoundedCornerShape(50))
-                .clickable(onClick = onToggleShopStatus)
-                .testTag("pos_shop_status_toggle"),
+              Modifier.fillMaxWidth().statusBarsPadding().height(60.dp).padding(horizontal = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
           ) {
-            Row(
-              modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-              verticalAlignment = Alignment.CenterVertically,
-            ) {
-              Icon(
-                imageVector = Icons.Filled.Storefront,
-                contentDescription = if (isShopOpen) "Shop Online" else "Shop Offline Closed",
-                tint = if (isShopOpen) Color(0xFF4ADE80) else Color(0xFFFCA5A5),
-                modifier = Modifier.size(13.dp),
-              )
-              Spacer(Modifier.width(4.dp))
-              Text(
-                text = if (isShopOpen) "Online" else "Offline • Closed",
-                color = Color.White,
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Bold,
-              )
+            IconButton(onClick = onBack, modifier = Modifier.testTag("pos_back")) {
+              Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = barFg)
+            }
+            Text(
+              text = "New Bill",
+              style = MaterialTheme.typography.titleLarge,
+              color = barFg,
+              modifier = Modifier.weight(1f),
+            )
+            ShopStatusBadge(
+              isShopOpen = isShopOpen,
+              onToggleShopStatus = onToggleShopStatus,
+              modifier = Modifier.padding(end = 4.dp).testTag("pos_shop_status_toggle"),
+            )
+            IconButton(onClick = onClearCart, modifier = Modifier.testTag("pos_clear")) {
+              Icon(Icons.Filled.Refresh, contentDescription = "Clear Cart", tint = barFg)
             }
           }
-          IconButton(onClick = onClearCart, modifier = Modifier.testTag("pos_clear")) {
-            Icon(Icons.Filled.Refresh, contentDescription = "Clear Cart", tint = Color.White)
-          }
+          HorizontalDivider(thickness = 1.dp, color = vyaparTopBarDividerColor())
         }
       }
     },
@@ -1278,35 +1301,40 @@ fun InvoicePreviewScreen(
 
   Scaffold(
     topBar = {
-      Surface(color = CharcoalHeader, contentColor = Color.White) {
-        Row(
-          modifier =
-            Modifier.fillMaxWidth().statusBarsPadding().height(60.dp).padding(horizontal = 8.dp),
-          verticalAlignment = Alignment.CenterVertically,
-        ) {
-          IconButton(onClick = onBack, modifier = Modifier.testTag("preview_back")) {
-            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
-          }
-          Text(
-            text = "Invoice Preview",
-            style = MaterialTheme.typography.titleLarge,
-            color = Color.White,
-            modifier = Modifier.weight(1f),
-          )
-          if (pdfFile != null && pdfFile.exists()) {
-            IconButton(
-              onClick = {
-                ShareAndPrintHelper.sharePdfDocument(
-                  context,
-                  pdfFile,
-                  "Share ${invoice?.invoiceNumber ?: "Invoice"} via WhatsApp or Apps",
-                )
-              },
-              modifier = Modifier.testTag("preview_top_share"),
-            ) {
-              Icon(Icons.Filled.Share, contentDescription = "Share PDF", tint = Color.White)
+      val barBg = vyaparTopBarContainerColor()
+      val barFg = vyaparTopBarContentColor()
+      Surface(color = barBg, contentColor = barFg, tonalElevation = 0.dp) {
+        Column(modifier = Modifier.fillMaxWidth()) {
+          Row(
+            modifier =
+              Modifier.fillMaxWidth().statusBarsPadding().height(60.dp).padding(horizontal = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+          ) {
+            IconButton(onClick = onBack, modifier = Modifier.testTag("preview_back")) {
+              Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = barFg)
+            }
+            Text(
+              text = "Invoice Preview",
+              style = MaterialTheme.typography.titleLarge,
+              color = barFg,
+              modifier = Modifier.weight(1f),
+            )
+            if (pdfFile != null && pdfFile.exists()) {
+              IconButton(
+                onClick = {
+                  ShareAndPrintHelper.sharePdfDocument(
+                    context,
+                    pdfFile,
+                    "Share ${invoice?.invoiceNumber ?: "Invoice"} via WhatsApp or Apps",
+                  )
+                },
+                modifier = Modifier.testTag("preview_top_share"),
+              ) {
+                Icon(Icons.Filled.Share, contentDescription = "Share PDF", tint = barFg)
+              }
             }
           }
+          HorizontalDivider(thickness = 1.dp, color = vyaparTopBarDividerColor())
         }
       }
     },

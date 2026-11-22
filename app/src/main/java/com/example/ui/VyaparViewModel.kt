@@ -82,6 +82,7 @@ data class DashboardMetrics(
   val outstandingDuesPaise: Long = 0L,
   val lowStockCount: Int = 0,
   val salesGrowthPercent: Int = 0,
+  val pendingOrdersCount: Int = 0,
 )
 
 class VyaparViewModel(application: Application) : AndroidViewModel(application) {
@@ -118,7 +119,7 @@ class VyaparViewModel(application: Application) : AndroidViewModel(application) 
   val toastMessage: StateFlow<String?> = _toastMessage.asStateFlow()
 
   val dashboardMetrics: StateFlow<DashboardMetrics> =
-    combine(products, customers, invoices, expenses) { prods, custs, invs, exps ->
+    combine(products, customers, invoices, expenses, orders) { prods, custs, invs, exps, ords ->
         val cal = Calendar.getInstance()
         cal.set(Calendar.HOUR_OF_DAY, 0)
         cal.set(Calendar.MINUTE, 0)
@@ -141,6 +142,8 @@ class VyaparViewModel(application: Application) : AndroidViewModel(application) 
         val walkInDues =
           invs.filter { it.customerId == null }.sumOf { it.balanceDuePaise }
         val lowStock = prods.count { it.stockQty <= it.lowStockThreshold }
+        val pendingOrders =
+          ords.count { it.status == OrderStatus.PENDING || it.status == OrderStatus.PROCESSING }
         val growth =
           when {
             yesterdaySales > 0L -> (((todaySales - yesterdaySales) * 100L) / yesterdaySales).toInt()
@@ -158,6 +161,7 @@ class VyaparViewModel(application: Application) : AndroidViewModel(application) 
           outstandingDuesPaise = customerDues + walkInDues,
           lowStockCount = lowStock,
           salesGrowthPercent = growth,
+          pendingOrdersCount = pendingOrders,
         )
       }
       .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), DashboardMetrics())
@@ -624,54 +628,128 @@ class VyaparViewModel(application: Application) : AndroidViewModel(application) 
     }
   }
 
-  fun createOrder(customer: Customer?, items: List<CartLineInput>, notes: String) {
+  fun createInlineCustomer(name: String, mobile: String, onSaved: (Customer) -> Unit) {
     viewModelScope.launch {
-      repository.createOrder(customer, items, notes)
-      showToast("Order created")
+      val saved = repository.findOrCreateCustomerByMobile(name = name, mobile = mobile)
+      if (saved != null) {
+        val norm = repository.normalizeMobile10(mobile)
+        val existed =
+          customers.value.any { it.id == saved.id && repository.normalizeMobile10(it.mobile) == norm }
+        showToast(if (existed) "Existing customer selected (${saved.name})" else "Customer added")
+        onSaved(saved)
+      }
+    }
+  }
+
+  fun createOrder(
+    customer: Customer?,
+    customerName: String = customer?.name ?: "",
+    customerMobile: String = customer?.mobile ?: "",
+    items: List<CartLineInput>,
+    notes: String,
+  ) {
+    viewModelScope.launch {
+      val created = repository.createOrder(customer, customerName, customerMobile, items, notes)
+      showToast("Pending order ${created.orderNumber} saved")
+    }
+  }
+
+  fun updatePendingOrder(
+    orderId: String,
+    customer: Customer?,
+    customerName: String,
+    customerMobile: String,
+    items: List<CartLineInput>,
+    discountValue: Double = 0.0,
+    isPercentageDiscount: Boolean = false,
+    notes: String,
+  ) {
+    viewModelScope.launch {
+      repository.updatePendingOrder(
+        orderId = orderId,
+        customer = customer,
+        customerName = customerName,
+        customerMobile = customerMobile,
+        items = items,
+        discountValue = discountValue,
+        isPercentageDiscount = isPercentageDiscount,
+        notes = notes,
+      )
+      showToast("Pending order updated")
     }
   }
 
   fun updateOrderStatus(orderId: String, status: OrderStatus) {
     viewModelScope.launch {
       repository.updateOrderStatus(orderId, status)
-      showToast("Order status updated to ${status.label}")
+      showToast("Order marked ${status.label}")
     }
   }
 
-  fun convertOrderToInvoice(order: Order, onReady: (Invoice) -> Unit) {
+  fun confirmOrderAndOpenInvoice(
+    order: Order,
+    finalItems: List<CartLineInput>,
+    discountValue: Double,
+    isPercentageDiscount: Boolean,
+    taxType: GstTaxType,
+    taxMode: GstTaxMode,
+    paymentMethod: PaymentMethod,
+    amountPaidPaise: Long,
+    notes: String,
+    onReady: (Invoice) -> Unit,
+  ) {
     viewModelScope.launch {
-      val cust = order.customerId?.let { id -> customers.value.find { it.id == id } }
-      val cartInputs =
-        order.items.map {
-          CartLineInput(
-            productId = it.productId,
-            name = it.name,
-            unit = it.unit,
-            quantity = it.quantity,
-            unitPricePaise = it.unitPricePaise,
-            gstPercent = it.gstPercent,
-          )
-        }
       val invoice =
-        repository.completeSaleAndCreateInvoice(
-          customer = cust,
-          cartItems = cartInputs,
-          discountValue = 0.0,
-          isPercentageDiscount = false,
-          taxType = settings.value.defaultTaxType,
-          taxMode = settings.value.defaultTaxMode,
-          paymentMethod = PaymentMethod.CASH,
-          amountPaidPaise = order.totalPaise,
-          notes = "Converted from ${order.orderNumber}",
+        repository.confirmOrderAndCreateInvoice(
+          order = order,
+          finalItems = finalItems,
+          discountValue = discountValue,
+          isPercentageDiscount = isPercentageDiscount,
+          taxType = taxType,
+          taxMode = taxMode,
+          paymentMethod = paymentMethod,
+          amountPaidPaise = amountPaidPaise,
+          notes = notes,
         )
-      repository.linkOrderToInvoice(order.id, invoice.id)
-      val pdfFile = generatePdfForInvoiceInternal(invoice, settings.value.defaultPaperFormat, settings.value.language)
+      val pdfFile =
+        generatePdfForInvoiceInternal(
+          invoice,
+          settings.value.defaultPaperFormat,
+          settings.value.language,
+        )
       val finalInv = invoice.copy(pdfPath = pdfFile.absolutePath)
       repository.updateInvoicePdfPath(invoice.id, pdfFile.absolutePath)
       _activePreviewInvoice.value = finalInv
       _activePreviewPdf.value = pdfFile
+      showToast("${order.orderNumber} completed • Invoice ${invoice.invoiceNumber} created")
       onReady(finalInv)
     }
+  }
+
+  fun convertOrderToInvoice(order: Order, onReady: (Invoice) -> Unit) {
+    val cartInputs =
+      order.items.map {
+        CartLineInput(
+          productId = it.productId,
+          name = it.name,
+          unit = it.unit,
+          quantity = it.quantity,
+          unitPricePaise = it.unitPricePaise,
+          gstPercent = it.gstPercent,
+        )
+      }
+    confirmOrderAndOpenInvoice(
+      order = order,
+      finalItems = cartInputs,
+      discountValue = order.discountInput,
+      isPercentageDiscount = order.isPercentageDiscount,
+      taxType = settings.value.defaultTaxType,
+      taxMode = settings.value.defaultTaxMode,
+      paymentMethod = PaymentMethod.CASH,
+      amountPaidPaise = order.totalPaise,
+      notes = order.notes.ifBlank { "Converted from ${order.orderNumber}" },
+      onReady = onReady,
+    )
   }
 
   fun upsertExpense(expense: Expense) {

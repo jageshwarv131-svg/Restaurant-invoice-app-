@@ -34,10 +34,7 @@ import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.Inventory
-import androidx.compose.material.icons.filled.LocalShipping
 import androidx.compose.material.icons.filled.Payments
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Receipt
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material3.AlertDialog
@@ -72,13 +69,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.DialogProperties
-import com.example.data.CartLineInput
 import com.example.model.Customer
 import com.example.model.InventoryMovement
 import com.example.model.Invoice
 import com.example.model.MovementType
-import com.example.model.Order
-import com.example.model.OrderStatus
 import com.example.model.Product
 import com.example.ui.components.EmptyStatePanel
 import com.example.ui.components.VyaparFormDialog
@@ -86,13 +80,9 @@ import com.example.ui.components.VyaparTopBar
 import com.example.ui.components.rememberSafeBottomPadding
 import com.example.ui.theme.AlertRed
 import com.example.ui.theme.AlertRedSoft
-import com.example.ui.theme.AmberGold
-import com.example.ui.theme.AmberGoldSoft
 import com.example.ui.theme.CharcoalHeader
 import com.example.ui.theme.EmeraldGreen
 import com.example.ui.theme.EmeraldGreenSoft
-import com.example.ui.theme.InfoBlue
-import com.example.ui.theme.InfoBlueSoft
 import com.example.ui.theme.SaffronOrange
 import com.example.ui.theme.SaffronOrangeSoft
 import com.example.util.CurrencyUtils
@@ -533,278 +523,6 @@ private fun CustomerEditorDialog(
       }
     },
   )
-}
-
-@Composable
-fun OrdersScreen(
-  orders: List<Order>,
-  products: List<Product>,
-  customers: List<Customer>,
-  currencySymbol: String,
-  isShopOpen: Boolean,
-  onToggleShopStatus: () -> Unit,
-  onBack: () -> Unit,
-  onCreateOrder: (Customer?, List<CartLineInput>, String) -> Unit,
-  onUpdateStatus: (String, OrderStatus) -> Unit,
-  onConvertOrderToInvoice: (Order) -> Unit,
-) {
-  BackHandler(onBack = onBack)
-
-  var selectedStatusFilter by remember { mutableStateOf<OrderStatus?>(null) }
-  var showNewOrderDialog by remember { mutableStateOf(false) }
-
-  val filtered =
-    remember(orders, selectedStatusFilter) {
-      if (selectedStatusFilter == null) orders else orders.filter { it.status == selectedStatusFilter }
-    }
-
-  Scaffold(
-    topBar = {
-      VyaparTopBar(
-        title = "Orders",
-        isShopOpen = isShopOpen,
-        onToggleShopStatus = onToggleShopStatus,
-        showBack = true,
-        onBackOrMenuClick = onBack,
-      )
-    },
-    floatingActionButton = {
-      FloatingActionButton(
-        onClick = { showNewOrderDialog = true },
-        containerColor = SaffronOrange,
-        contentColor = Color.White,
-      ) {
-        Icon(Icons.Filled.Add, contentDescription = "Create Order")
-      }
-    },
-  ) { innerPadding ->
-    Column(
-      modifier =
-        Modifier.fillMaxSize()
-          .background(MaterialTheme.colorScheme.background)
-          .padding(innerPadding)
-    ) {
-      Row(
-        modifier =
-          Modifier.fillMaxWidth()
-            .background(MaterialTheme.colorScheme.surface)
-            .horizontalScroll(rememberScrollState())
-            .padding(horizontal = 14.dp, vertical = 10.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-      ) {
-        FilterChip(
-          selected = selectedStatusFilter == null,
-          onClick = { selectedStatusFilter = null },
-          label = { Text("All (${orders.size})") },
-          colors =
-            FilterChipDefaults.filterChipColors(
-              selectedContainerColor = SaffronOrange,
-              selectedLabelColor = Color.White,
-            ),
-        )
-        OrderStatus.entries.forEach { st ->
-          FilterChip(
-            selected = selectedStatusFilter == st,
-            onClick = { selectedStatusFilter = st },
-            label = { Text(st.label) },
-            colors =
-              FilterChipDefaults.filterChipColors(
-                selectedContainerColor = CharcoalHeader,
-                selectedLabelColor = Color.White,
-              ),
-          )
-        }
-      }
-
-      if (filtered.isEmpty()) {
-        EmptyStatePanel(
-          icon = Icons.Filled.LocalShipping,
-          title = "No Orders Found",
-          subtitle = "Track pending, processing, completed, cancelled, and refunded orders offline.",
-          actionLabel = "Create Order",
-          onAction = { showNewOrderDialog = true },
-        )
-      } else {
-        LazyColumn(
-          contentPadding = PaddingValues(16.dp),
-          verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-          items(filtered, key = { it.id }) { order ->
-            Surface(
-              shape = RoundedCornerShape(16.dp),
-              color = MaterialTheme.colorScheme.surface,
-              tonalElevation = 1.dp,
-              shadowElevation = 2.dp,
-              modifier = Modifier.fillMaxWidth(),
-            ) {
-              Column(modifier = Modifier.padding(14.dp)) {
-                Row(
-                  modifier = Modifier.fillMaxWidth(),
-                  horizontalArrangement = Arrangement.SpaceBetween,
-                  verticalAlignment = Alignment.CenterVertically,
-                ) {
-                  Column {
-                    Text("${order.orderNumber} • ${order.customerName}", fontWeight = FontWeight.Bold)
-                    Text(
-                      "${CurrencyUtils.formatDateTime(order.timestamp)} • ${order.items.size} item(s)",
-                      style = MaterialTheme.typography.bodySmall,
-                      color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                  }
-                  Text(
-                    CurrencyUtils.formatPaise(order.totalPaise, currencySymbol),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = SaffronOrange,
-                  )
-                }
-                Spacer(Modifier.height(10.dp))
-                Row(
-                  modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                  horizontalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                  OrderStatus.entries.forEach { st ->
-                    FilterChip(
-                      selected = order.status == st,
-                      onClick = { onUpdateStatus(order.id, st) },
-                      label = { Text(st.label, fontSize = 11.sp) },
-                      colors =
-                        FilterChipDefaults.filterChipColors(
-                          selectedContainerColor =
-                            when (st) {
-                              OrderStatus.COMPLETED -> EmeraldGreen
-                              OrderStatus.CANCELLED, OrderStatus.REFUNDED -> AlertRed
-                              OrderStatus.PROCESSING -> InfoBlue
-                              OrderStatus.PENDING -> AmberGold
-                            },
-                          selectedLabelColor = Color.White,
-                        ),
-                    )
-                  }
-                }
-                if (order.linkedInvoiceId == null && order.status != OrderStatus.CANCELLED && order.status != OrderStatus.REFUNDED) {
-                  Spacer(Modifier.height(8.dp))
-                  OutlinedButton(
-                    onClick = { onConvertOrderToInvoice(order) },
-                    shape = RoundedCornerShape(10.dp),
-                    border = BorderStroke(1.dp, SaffronOrange),
-                    modifier = Modifier.fillMaxWidth(),
-                  ) {
-                    Icon(Icons.Filled.Receipt, contentDescription = null, tint = SaffronOrange, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("Convert to Invoice & PDF", color = SaffronOrange, fontWeight = FontWeight.SemiBold)
-                  }
-                }
-              }
-            }
-          }
-          item { Spacer(Modifier.height(72.dp)) }
-        }
-      }
-    }
-  }
-
-  if (showNewOrderDialog) {
-    var selectedCustomer by remember { mutableStateOf<Customer?>(null) }
-    var selectedItems by remember { mutableStateOf<List<CartLineInput>>(emptyList()) }
-    var notes by remember { mutableStateOf("") }
-
-    VyaparFormDialog(
-      title = "Create New Order",
-      onDismiss = { showNewOrderDialog = false },
-      scrollContent = {
-        Text("Customer: ${selectedCustomer?.name ?: "Walk-in Customer"}", fontWeight = FontWeight.SemiBold)
-        if (customers.isNotEmpty()) {
-          Row(
-            modifier = Modifier.horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-          ) {
-            FilterChip(
-              selected = selectedCustomer == null,
-              onClick = { selectedCustomer = null },
-              label = { Text("Walk-in") },
-            )
-            customers.take(8).forEach { c ->
-              FilterChip(
-                selected = selectedCustomer?.id == c.id,
-                onClick = { selectedCustomer = c },
-                label = { Text(c.name) },
-              )
-            }
-          }
-        }
-        Text("Tap products to add (${selectedItems.size} added):", style = MaterialTheme.typography.labelMedium)
-        if (products.isEmpty()) {
-          Text("Add products first in the Products tab.", color = AlertRed, fontSize = 12.sp)
-        } else {
-          Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            products.take(6).forEach { p ->
-              Surface(
-                shape = RoundedCornerShape(8.dp),
-                color = MaterialTheme.colorScheme.background,
-                modifier =
-                  Modifier.fillMaxWidth().clickable {
-                    selectedItems =
-                      selectedItems +
-                        CartLineInput(
-                          productId = p.id,
-                          name = p.name,
-                          unit = p.unit,
-                          quantity = 1.0,
-                          unitPricePaise = p.sellingPricePaise,
-                          gstPercent = p.gstPercent,
-                        )
-                  },
-              ) {
-                Row(
-                  modifier = Modifier.padding(8.dp),
-                  horizontalArrangement = Arrangement.SpaceBetween,
-                ) {
-                  Text(p.name, fontSize = 13.sp)
-                  Text(
-                    "+ ${CurrencyUtils.formatPaise(p.sellingPricePaise, currencySymbol)}",
-                    color = SaffronOrange,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 13.sp,
-                  )
-                }
-              }
-            }
-          }
-        }
-        OutlinedTextField(
-          value = notes,
-          onValueChange = { notes = it },
-          label = { Text("Order Notes") },
-          singleLine = true,
-          modifier = Modifier.fillMaxWidth(),
-        )
-      },
-      bottomButtons = {
-        TextButton(
-          onClick = { showNewOrderDialog = false },
-          modifier = Modifier.heightIn(min = 48.dp),
-        ) {
-          Text("Cancel")
-        }
-        Spacer(Modifier.width(8.dp))
-        Button(
-          onClick = {
-            if (selectedItems.isNotEmpty()) {
-              onCreateOrder(selectedCustomer, selectedItems, notes.trim())
-              showNewOrderDialog = false
-            }
-          },
-          enabled = selectedItems.isNotEmpty(),
-          shape = RoundedCornerShape(10.dp),
-          colors = ButtonDefaults.buttonColors(containerColor = SaffronOrange),
-          modifier = Modifier.heightIn(min = 48.dp),
-        ) {
-          Text("Save Order", color = Color.White, fontWeight = FontWeight.Bold)
-        }
-      },
-    )
-  }
 }
 
 @Composable

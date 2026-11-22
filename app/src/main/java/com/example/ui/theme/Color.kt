@@ -17,6 +17,8 @@ val EmeraldGreenSoft = Color(0xFFDCFCE7)
 val EmeraldGreenDark = Color(0xFF15803D)
 
 val SoftGreyBg = Color(0xFFF3F4F6)
+val WarmCreamHeader = Color(0xFFFFFAF4)
+val WarmCreamBorder = Color(0xFFEBD9C8)
 val CardWhite = Color(0xFFFFFFFF)
 val SlateText = Color(0xFF111827)
 val MutedText = Color(0xFF6B7280)

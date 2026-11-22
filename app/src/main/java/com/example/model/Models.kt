@@ -166,6 +166,8 @@ data class Order(
   val customerName: String = "Walk-in Customer",
   val customerMobile: String = "",
   val items: List<InvoiceItem> = emptyList(),
+  val discountInput: Double = 0.0,
+  val isPercentageDiscount: Boolean = false,
   val totalPaise: Long = 0L,
   val status: OrderStatus = OrderStatus.PENDING,
   val linkedInvoiceId: String? = null,

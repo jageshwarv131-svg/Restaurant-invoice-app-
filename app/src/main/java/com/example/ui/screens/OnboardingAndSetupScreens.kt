@@ -83,9 +83,11 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.example.R
 import com.example.model.BusinessProfile
+import com.example.ui.components.vyaparTopBarContainerColor
+import com.example.ui.components.vyaparTopBarContentColor
+import com.example.ui.components.vyaparTopBarDividerColor
 import com.example.ui.theme.AlertRed
 import com.example.ui.theme.CharcoalBlack
-import com.example.ui.theme.CharcoalHeader
 import com.example.ui.theme.EmeraldGreen
 import com.example.ui.theme.SaffronOrange
 import com.example.ui.theme.SaffronOrangeDark
@@ -434,46 +436,54 @@ fun BusinessSetupScreen(
 
   Scaffold(
     topBar = {
-      Surface(color = CharcoalHeader, contentColor = Color.White) {
-        Row(
-          modifier =
-            Modifier.fillMaxWidth().statusBarsPadding().height(60.dp).padding(horizontal = 8.dp),
-          verticalAlignment = Alignment.CenterVertically,
-        ) {
-          if (canNavigateBack) {
-            IconButton(onClick = onBack, modifier = Modifier.testTag("business_back")) {
-              Icon(
-                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                contentDescription = "Back",
-                tint = Color.White,
-              )
-            }
-          } else {
-            Spacer(Modifier.width(12.dp))
-          }
-          Text(
-            text = "Business Setup",
-            style = MaterialTheme.typography.titleLarge,
-            color = Color.White,
-            modifier = Modifier.weight(1f),
-          )
-          if (!canNavigateBack) {
-            TextButton(
-              onClick = {
-                val fallbackName = businessName.trim().ifBlank { "My Business" }
-                onSave(
-                  existingProfile.copy(
-                    businessName = fallbackName,
-                    ownerName = ownerName.trim(),
-                    mobile = mobile.trim(),
-                  ),
-                  pickedLogoUri,
+      val barBg = vyaparTopBarContainerColor()
+      val barFg = vyaparTopBarContentColor()
+      Surface(color = barBg, contentColor = barFg, tonalElevation = 0.dp) {
+        Column(modifier = Modifier.fillMaxWidth()) {
+          Row(
+            modifier =
+              Modifier.fillMaxWidth().statusBarsPadding().height(60.dp).padding(horizontal = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+          ) {
+            if (canNavigateBack) {
+              IconButton(onClick = onBack, modifier = Modifier.testTag("business_back")) {
+                Icon(
+                  imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                  contentDescription = "Back",
+                  tint = barFg,
                 )
               }
-            ) {
-              Text("Skip", color = SaffronOrange, fontWeight = FontWeight.SemiBold)
+            } else {
+              Spacer(Modifier.width(12.dp))
+            }
+            Text(
+              text = "Business Setup",
+              style = MaterialTheme.typography.titleLarge,
+              color = barFg,
+              modifier = Modifier.weight(1f),
+            )
+            if (!canNavigateBack) {
+              TextButton(
+                onClick = {
+                  val fallbackName = businessName.trim().ifBlank { "My Business" }
+                  onSave(
+                    existingProfile.copy(
+                      businessName = fallbackName,
+                      ownerName = ownerName.trim(),
+                      mobile = mobile.trim(),
+                    ),
+                    pickedLogoUri,
+                  )
+                }
+              ) {
+                Text("Skip", color = SaffronOrangeDark, fontWeight = FontWeight.Bold)
+              }
             }
           }
+          androidx.compose.material3.HorizontalDivider(
+            thickness = 1.dp,
+            color = vyaparTopBarDividerColor(),
+          )
         }
       }
     },
