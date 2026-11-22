@@ -63,7 +63,19 @@ android {
     compose = true
     buildConfig = true
   }
-  testOptions { unitTests { isIncludeAndroidResources = true } }
+  testOptions {
+    unitTests {
+      isIncludeAndroidResources = true
+      all { testTask ->
+        val preCachedRobolectric = file("/home/appuser/.m2/repository/org/robolectric")
+        val currentUserRobolectric =
+          file("${System.getProperty("user.home")}/.m2/repository/org/robolectric")
+        if (preCachedRobolectric.exists() && !currentUserRobolectric.exists()) {
+          testTask.systemProperty("user.home", "/home/appuser")
+        }
+      }
+    }
+  }
   dependenciesInfo {
     includeInApk = false
     includeInBundle = true
