@@ -56,6 +56,12 @@ enum class AppLanguage(val code: String, val label: String) {
   HINDI("hi", "हिन्दी (Hindi)"),
 }
 
+enum class ThemePreference(val label: String) {
+  SYSTEM("System"),
+  LIGHT("Light"),
+  DARK("Dark"),
+}
+
 @JsonClass(generateAdapter = true)
 data class BusinessProfile(
   val businessName: String = "",
@@ -203,6 +209,7 @@ data class AppSettings(
   val onboardingCompleted: Boolean = false,
   val businessSetupCompleted: Boolean = false,
   val darkMode: Boolean = false,
+  val themePreference: ThemePreference = ThemePreference.SYSTEM,
   val language: AppLanguage = AppLanguage.ENGLISH,
   val defaultPaperFormat: PaperFormat = PaperFormat.A4,
   val defaultTaxType: GstTaxType = GstTaxType.INTRA_STATE_CGST_SGST,

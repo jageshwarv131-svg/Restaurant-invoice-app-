@@ -1,13 +1,14 @@
 package com.example.ui.components
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
@@ -31,25 +32,28 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Menu
-import androidx.compose.material.icons.filled.NotificationsNone
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Storefront
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
@@ -64,12 +68,10 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.DialogWindowProvider
 import androidx.core.view.WindowCompat
 import com.example.ui.theme.AlertRed
-import com.example.ui.theme.AlertRedSoft
 import com.example.ui.theme.BorderGreyDark
 import com.example.ui.theme.CharcoalSurface
-import com.example.ui.theme.EmeraldGreen
-import com.example.ui.theme.EmeraldGreenDark
-import com.example.ui.theme.EmeraldGreenSoft
+import com.example.ui.theme.EmeraldGreenLight
+import com.example.ui.theme.LocalVyaparClayPalette
 import com.example.ui.theme.LocalVyaparDarkTheme
 import com.example.ui.theme.SaffronOrange
 import com.example.ui.theme.SlateText
@@ -114,74 +116,60 @@ fun ShopStatusBadge(
   onToggleShopStatus: (() -> Unit)?,
   modifier: Modifier = Modifier,
 ) {
-  val isDark = LocalVyaparDarkTheme.current
-  val bgColor =
-    when {
-      isShopOpen && isDark -> EmeraldGreen.copy(alpha = 0.22f)
-      isShopOpen -> EmeraldGreenSoft
-      isDark -> AlertRed.copy(alpha = 0.24f)
-      else -> AlertRedSoft
-    }
-  val borderColor =
-    when {
-      isShopOpen && isDark -> EmeraldGreen.copy(alpha = 0.75f)
-      isShopOpen -> EmeraldGreen.copy(alpha = 0.55f)
-      isDark -> AlertRed.copy(alpha = 0.85f)
-      else -> AlertRed.copy(alpha = 0.55f)
-    }
-  val accentColor =
-    when {
-      isShopOpen && isDark -> Color(0xFF4ADE80)
-      isShopOpen -> EmeraldGreen
-      isDark -> Color(0xFFFCA5A5)
-      else -> AlertRed
-    }
-  val labelColor =
-    when {
-      isDark -> Color.White
-      isShopOpen -> EmeraldGreenDark
-      else -> AlertRed
-    }
+  val tone = if (isShopOpen) ClayTones.Green else ClayTones.Red
+  val interactionSource = remember { MutableInteractionSource() }
+  val isPressed by interactionSource.collectIsPressedAsState()
 
-  Surface(
-    shape = RoundedCornerShape(50),
-    color = bgColor,
-    border = BorderStroke(1.dp, borderColor),
+  Row(
     modifier =
       modifier
-        .clip(RoundedCornerShape(50))
+        .raised3D(
+          cornerRadius = 50.dp,
+          isPressed = onToggleShopStatus != null && isPressed,
+          tone = tone,
+          shadowDepth = 3.dp,
+        )
         .then(
-          if (onToggleShopStatus != null) Modifier.clickable(onClick = onToggleShopStatus)
-          else Modifier
-        ),
+          if (onToggleShopStatus != null) {
+            Modifier.clickable(
+              interactionSource = interactionSource,
+              indication = null,
+              onClick = onToggleShopStatus,
+            )
+          } else Modifier
+        )
+        .padding(horizontal = 11.dp, vertical = 7.dp),
+    verticalAlignment = Alignment.CenterVertically,
   ) {
-    Row(
-      modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-      verticalAlignment = Alignment.CenterVertically,
-    ) {
-      Box(
-        modifier =
-          Modifier.size(8.dp)
-            .clip(CircleShape)
-            .background(accentColor)
-      )
-      Spacer(Modifier.width(5.dp))
-      Icon(
-        imageVector = Icons.Filled.Storefront,
-        contentDescription =
-          if (isShopOpen) "Shop Online Open, tap to close"
-          else "Shop Offline Closed, tap to open",
-        tint = accentColor,
-        modifier = Modifier.size(13.dp),
-      )
-      Spacer(Modifier.width(4.dp))
-      Text(
-        text = if (isShopOpen) "Online" else "Offline • Closed",
-        color = labelColor,
-        fontSize = 11.sp,
-        fontWeight = FontWeight.Bold,
-      )
-    }
+    Box(
+      modifier =
+        Modifier.size(8.dp)
+          .clip(CircleShape)
+          .background(
+            Brush.radialGradient(
+              listOf(
+                Color.White,
+                if (isShopOpen) EmeraldGreenLight else Color(0xFFFCA5A5),
+              )
+            )
+          )
+    )
+    Spacer(Modifier.width(5.dp))
+    Icon(
+      imageVector = Icons.Filled.Storefront,
+      contentDescription =
+        if (isShopOpen) "Shop Online Open, tap to close"
+        else "Shop Offline Closed, tap to open",
+      tint = Color.White,
+      modifier = Modifier.size(14.dp),
+    )
+    Spacer(Modifier.width(4.dp))
+    Text(
+      text = if (isShopOpen) "Online" else "Offline • Closed",
+      color = Color.White,
+      fontSize = 11.sp,
+      fontWeight = FontWeight.Bold,
+    )
   }
 }
 
@@ -196,81 +184,100 @@ fun VyaparTopBar(
   alertCount: Int = 0,
   trailingContent: @Composable (() -> Unit)? = null,
 ) {
-  val containerColor = vyaparTopBarContainerColor()
-  val contentColor = vyaparTopBarContentColor()
+  val palette = LocalVyaparClayPalette.current
+  val iconTone = remember(palette.isDark) {
+    ClayTone(palette.neutralIconTop, palette.textPrimary, palette.neutralIconBottom)
+  }
 
-  Surface(color = containerColor, contentColor = contentColor, tonalElevation = 0.dp) {
-    Column(modifier = Modifier.fillMaxWidth()) {
-      Row(
+  Box(
+    modifier =
+      Modifier.fillMaxWidth()
+        .background(palette.background)
+        .statusBarsPadding()
+        .padding(horizontal = 10.dp, vertical = 6.dp)
+  ) {
+    Row(
+      modifier =
+        Modifier.fillMaxWidth()
+          .raised3D(cornerRadius = 22.dp, shadowDepth = 4.dp)
+          .height(56.dp)
+          .padding(horizontal = 10.dp),
+      verticalAlignment = Alignment.CenterVertically,
+    ) {
+      // 3D Hamburger / Back button
+      Box(
+        contentAlignment = Alignment.Center,
         modifier =
-          Modifier.fillMaxWidth()
-            .statusBarsPadding()
-            .height(60.dp)
-            .padding(horizontal = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
+          Modifier.size(40.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .clickable(onClick = onBackOrMenuClick)
+            .testTag(if (showBack) "top_bar_back" else "top_bar_menu"),
       ) {
-        IconButton(
-          onClick = onBackOrMenuClick,
-          modifier = Modifier.testTag(if (showBack) "top_bar_back" else "top_bar_menu"),
+        Icon3D(
+          imageVector =
+            if (showBack) Icons.AutoMirrored.Filled.ArrowBack else Icons.Filled.Menu,
+          contentDescription = if (showBack) "Back" else "Open navigation menu",
+          tone = iconTone,
+          size = 24.dp,
+        )
+      }
+
+      Spacer(Modifier.width(6.dp))
+
+      Text(
+        text = title,
+        style = MaterialTheme.typography.titleLarge,
+        fontWeight = FontWeight.ExtraBold,
+        color = palette.textPrimary,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        modifier = Modifier.weight(1f),
+      )
+
+      ShopStatusBadge(
+        isShopOpen = isShopOpen,
+        onToggleShopStatus = onToggleShopStatus,
+        modifier = Modifier.padding(end = 6.dp).testTag("shop_status_toggle"),
+      )
+
+      if (trailingContent != null) {
+        trailingContent()
+      }
+
+      if (onAlertClick != null) {
+        Box(
+          contentAlignment = Alignment.Center,
+          modifier =
+            Modifier.size(42.dp)
+              .clip(RoundedCornerShape(14.dp))
+              .clickable(onClick = onAlertClick)
+              .testTag("top_bar_alerts"),
         ) {
-          Icon(
-            imageVector =
-              if (showBack) Icons.AutoMirrored.Filled.ArrowBack else Icons.Filled.Menu,
-            contentDescription = if (showBack) "Back" else "Open navigation menu",
-            tint = contentColor,
+          Icon3D(
+            imageVector = Icons.Filled.Notifications,
+            contentDescription = "Inventory and Payment Alerts",
+            tone = iconTone,
+            size = 24.dp,
           )
-        }
-
-        Text(
-          text = title,
-          style = MaterialTheme.typography.titleLarge,
-          color = contentColor,
-          maxLines = 1,
-          overflow = TextOverflow.Ellipsis,
-          modifier = Modifier.weight(1f).padding(start = 4.dp),
-        )
-
-        ShopStatusBadge(
-          isShopOpen = isShopOpen,
-          onToggleShopStatus = onToggleShopStatus,
-          modifier = Modifier.padding(end = 6.dp).testTag("shop_status_toggle"),
-        )
-
-        if (trailingContent != null) {
-          trailingContent()
-        }
-
-        if (onAlertClick != null) {
-          Box {
-            IconButton(onClick = onAlertClick, modifier = Modifier.testTag("top_bar_alerts")) {
-              Icon(
-                imageVector = Icons.Filled.NotificationsNone,
-                contentDescription = "Inventory and Payment Alerts",
-                tint = contentColor,
+          if (alertCount > 0) {
+            Box(
+              modifier =
+                Modifier.align(Alignment.TopEnd)
+                  .padding(top = 3.dp, end = 3.dp)
+                  .size(18.dp)
+                  .raised3D(cornerRadius = 9.dp, tone = ClayTones.Orange, shadowDepth = 2.dp),
+              contentAlignment = Alignment.Center,
+            ) {
+              Text(
+                text = if (alertCount > 9) "9+" else "$alertCount",
+                color = Color.White,
+                fontSize = 9.sp,
+                fontWeight = FontWeight.ExtraBold,
               )
-            }
-            if (alertCount > 0) {
-              Box(
-                modifier =
-                  Modifier.align(Alignment.TopEnd)
-                    .padding(top = 8.dp, end = 8.dp)
-                    .size(16.dp)
-                    .clip(CircleShape)
-                    .background(SaffronOrange),
-                contentAlignment = Alignment.Center,
-              ) {
-                Text(
-                  text = if (alertCount > 9) "9+" else "$alertCount",
-                  color = Color.White,
-                  fontSize = 9.sp,
-                  fontWeight = FontWeight.Bold,
-                )
-              }
             }
           }
         }
       }
-      HorizontalDivider(thickness = 1.dp, color = vyaparTopBarDividerColor())
     }
   }
 }
@@ -283,40 +290,47 @@ fun MetricGridCard(
   iconTint: Color,
   iconBg: Color,
   modifier: Modifier = Modifier,
+  tone: ClayTone? = null,
   onClick: (() -> Unit)? = null,
 ) {
-  Surface(
-    shape = RoundedCornerShape(16.dp),
-    color = MaterialTheme.colorScheme.surface,
-    tonalElevation = 1.dp,
-    shadowElevation = 2.dp,
-    modifier =
-      modifier.then(
-        if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier
-      ),
+  val palette = LocalVyaparClayPalette.current
+  val resolvedTone =
+    tone
+      ?: remember(iconTint) {
+        when (iconTint) {
+          com.example.ui.theme.InfoBlue -> ClayTones.Blue
+          com.example.ui.theme.EmeraldGreen -> ClayTones.Green
+          com.example.ui.theme.AmberGold -> ClayTones.Amber
+          com.example.ui.theme.PurpleAccent -> ClayTones.Purple
+          AlertRed -> ClayTones.Red
+          else -> ClayTones.Orange
+        }
+      }
+
+  Card3D(
+    modifier = modifier,
+    cornerRadius = 22.dp,
+    shadowDepth = 4.dp,
+    onClick = onClick,
+    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 14.dp),
   ) {
     Row(
-      modifier = Modifier.fillMaxWidth().padding(14.dp),
+      modifier = Modifier.fillMaxWidth(),
       verticalAlignment = Alignment.CenterVertically,
     ) {
-      Box(
-        modifier =
-          Modifier.size(42.dp).clip(RoundedCornerShape(12.dp)).background(iconBg),
-        contentAlignment = Alignment.Center,
-      ) {
-        Icon(
-          imageVector = icon,
-          contentDescription = title,
-          tint = iconTint,
-          modifier = Modifier.size(22.dp),
-        )
-      }
+      Icon3D(
+        imageVector = icon,
+        contentDescription = title,
+        tone = resolvedTone,
+        size = 34.dp,
+      )
       Spacer(Modifier.width(12.dp))
       Column(modifier = Modifier.weight(1f)) {
         Text(
           text = title,
           style = MaterialTheme.typography.bodySmall,
-          color = MaterialTheme.colorScheme.onSurfaceVariant,
+          color = palette.textSecondary,
+          fontWeight = FontWeight.Medium,
           maxLines = 1,
           overflow = TextOverflow.Ellipsis,
         )
@@ -324,8 +338,9 @@ fun MetricGridCard(
         Text(
           text = value,
           style = MaterialTheme.typography.titleMedium,
-          fontWeight = FontWeight.Bold,
-          color = MaterialTheme.colorScheme.onSurface,
+          fontSize = 18.sp,
+          fontWeight = FontWeight.ExtraBold,
+          color = palette.textPrimary,
           maxLines = 1,
           overflow = TextOverflow.Ellipsis,
         )
@@ -342,47 +357,42 @@ fun EmptyStatePanel(
   actionLabel: String? = null,
   onAction: (() -> Unit)? = null,
 ) {
+  val palette = LocalVyaparClayPalette.current
   Column(
-    modifier = Modifier.fillMaxWidth().padding(32.dp),
+    modifier = Modifier.fillMaxWidth().padding(28.dp),
     horizontalAlignment = Alignment.CenterHorizontally,
     verticalArrangement = Arrangement.Center,
   ) {
-    Box(
-      modifier =
-        Modifier.size(72.dp)
-          .clip(CircleShape)
-          .background(SaffronOrange.copy(alpha = 0.12f)),
-      contentAlignment = Alignment.Center,
-    ) {
-      Icon(
-        imageVector = icon,
-        contentDescription = title,
-        tint = SaffronOrange,
-        modifier = Modifier.size(36.dp),
-      )
-    }
+    ClayIconPad(
+      imageVector = icon,
+      contentDescription = title,
+      tone = ClayTones.Orange,
+      padSize = 78.dp,
+      iconSize = 38.dp,
+      cornerRadius = 26.dp,
+    )
     Spacer(Modifier.height(16.dp))
     Text(
       text = title,
       style = MaterialTheme.typography.titleMedium,
-      fontWeight = FontWeight.Bold,
+      fontWeight = FontWeight.ExtraBold,
+      color = palette.textPrimary,
       textAlign = TextAlign.Center,
     )
     Spacer(Modifier.height(6.dp))
     Text(
       text = subtitle,
       style = MaterialTheme.typography.bodyMedium,
-      color = MaterialTheme.colorScheme.onSurfaceVariant,
+      color = palette.textSecondary,
       textAlign = TextAlign.Center,
     )
     if (actionLabel != null && onAction != null) {
       Spacer(Modifier.height(18.dp))
-      Button(
+      Button3D(
         onClick = onAction,
-        shape = RoundedCornerShape(12.dp),
-        colors = ButtonDefaults.buttonColors(containerColor = SaffronOrange),
+        cornerRadius = 18.dp,
       ) {
-        Text(actionLabel, color = Color.White, fontWeight = FontWeight.SemiBold)
+        Text(actionLabel, color = Color.White, fontWeight = FontWeight.Bold)
       }
     }
   }
@@ -396,6 +406,7 @@ fun VyaparFormDialog(
   bottomButtons: @Composable RowScope.() -> Unit,
 ) {
   val appInsets = LocalAppSafeInsets.current
+  val palette = LocalVyaparClayPalette.current
 
   Dialog(
     onDismissRequest = onDismiss,
@@ -435,52 +446,146 @@ fun VyaparFormDialog(
             indication = null,
             onClick = onDismiss,
           )
-          .padding(start = 16.dp, end = 16.dp, top = safeTop, bottom = safeBottom),
+          .padding(start = 14.dp, end = 14.dp, top = safeTop, bottom = safeBottom),
       contentAlignment = Alignment.Center,
     ) {
-      Surface(
-        shape = RoundedCornerShape(20.dp),
-        color = MaterialTheme.colorScheme.surface,
-        tonalElevation = 4.dp,
+      Column(
         modifier =
           Modifier.widthIn(max = 560.dp)
             .fillMaxWidth()
+            .raised3D(cornerRadius = 28.dp, shadowDepth = 8.dp)
             .clickable(
               interactionSource = remember { MutableInteractionSource() },
               indication = null,
               onClick = {},
             ),
       ) {
-        Column(modifier = Modifier.fillMaxWidth()) {
-          Text(
-            text = title,
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(start = 18.dp, end = 18.dp, top = 18.dp, bottom = 12.dp),
-          )
+        Text(
+          text = title,
+          style = MaterialTheme.typography.titleLarge,
+          fontWeight = FontWeight.ExtraBold,
+          color = palette.textPrimary,
+          modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 12.dp),
+        )
 
-          Column(
-            modifier =
-              Modifier.weight(1f, fill = false)
-                .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 18.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-            content = scrollContent,
-          )
+        Column(
+          modifier =
+            Modifier.weight(1f, fill = false)
+              .fillMaxWidth()
+              .verticalScroll(rememberScrollState())
+              .padding(horizontal = 18.dp),
+          verticalArrangement = Arrangement.spacedBy(12.dp),
+          content = scrollContent,
+        )
 
-          Spacer(Modifier.height(12.dp))
-          HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+        Spacer(Modifier.height(12.dp))
+        HorizontalDivider(
+          color = palette.glossBorderBottom.copy(alpha = 0.45f),
+          modifier = Modifier.padding(horizontal = 16.dp),
+        )
 
-          Row(
-            modifier =
-              Modifier.fillMaxWidth()
-                .padding(start = 18.dp, end = 18.dp, top = 12.dp, bottom = 16.dp),
-            horizontalArrangement = Arrangement.End,
-            verticalAlignment = Alignment.CenterVertically,
-            content = bottomButtons,
-          )
-        }
+        Row(
+          modifier =
+            Modifier.fillMaxWidth()
+              .padding(start = 18.dp, end = 18.dp, top = 12.dp, bottom = 18.dp),
+          horizontalArrangement = Arrangement.End,
+          verticalAlignment = Alignment.CenterVertically,
+          content = bottomButtons,
+        )
+      }
+    }
+  }
+}
+
+/**
+ * 3D Clay Bar Chart with glossy orange bars, rounded tops, soft drop shadows, and subtle axis labels.
+ */
+@Composable
+fun ClayBarChart(
+  points: List<Pair<String, Long>>,
+  tone: ClayTone = ClayTones.HeroOrange,
+  labelColor: Color,
+  modifier: Modifier = Modifier,
+) {
+  val palette = LocalVyaparClayPalette.current
+  val maxVal = (points.maxOfOrNull { it.second } ?: 1L).coerceAtLeast(1L)
+  Column(modifier = modifier) {
+    Box(
+      modifier =
+        Modifier.weight(1f)
+          .fillMaxWidth()
+          .drawBehind {
+            val count = points.size.coerceAtLeast(1)
+            val slotW = size.width / count
+            val barW = (slotW * 0.56f).coerceIn(14.dp.toPx(), 34.dp.toPx())
+            val baselineY = size.height - 2.dp.toPx()
+
+            // Subtle baseline line
+            drawLine(
+              color = palette.textSecondary.copy(alpha = 0.22f),
+              start = Offset(6.dp.toPx(), baselineY),
+              end = Offset(size.width - 6.dp.toPx(), baselineY),
+              strokeWidth = 1.dp.toPx(),
+            )
+
+            points.forEachIndexed { idx, (_, value) ->
+              val ratio = value.toFloat() / maxVal.toFloat()
+              val barH =
+                if (value > 0) (ratio * (baselineY - 12.dp.toPx())).coerceAtLeast(14.dp.toPx())
+                else 8.dp.toPx()
+              val x = idx * slotW + (slotW - barW) / 2f
+              val y = baselineY - barH
+              val cr = CornerRadius(9.dp.toPx(), 9.dp.toPx())
+
+              if (value > 0) {
+                // Drop shadow under/right of bar
+                drawRoundRect(
+                  color = palette.shadowDark.copy(alpha = if (palette.isDark) 0.55f else 0.22f),
+                  topLeft = Offset(x + 2.5.dp.toPx(), y + 3.dp.toPx()),
+                  size = Size(barW, barH),
+                  cornerRadius = cr,
+                )
+                // Glossy vertical clay bar
+                drawRoundRect(
+                  brush = Brush.verticalGradient(listOf(tone.top, tone.mid, tone.bottom)),
+                  topLeft = Offset(x, y),
+                  size = Size(barW, barH),
+                  cornerRadius = cr,
+                )
+                // Inner gloss highlight rim
+                val sw = 1.dp.toPx()
+                drawRoundRect(
+                  brush = Brush.linearGradient(
+                    listOf(Color.White.copy(alpha = 0.65f), Color.Transparent)
+                  ),
+                  topLeft = Offset(x + sw / 2f, y + sw / 2f),
+                  size = Size(barW - sw, barH - sw),
+                  cornerRadius = cr,
+                  style = Stroke(width = sw),
+                )
+              } else {
+                drawRoundRect(
+                  color = palette.insetBg,
+                  topLeft = Offset(x, y),
+                  size = Size(barW, barH),
+                  cornerRadius = cr,
+                )
+              }
+            }
+          }
+    )
+    Spacer(Modifier.height(8.dp))
+    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+      points.forEach { (label, _) ->
+        Text(
+          text = label,
+          color = labelColor,
+          fontSize = 11.sp,
+          fontWeight = FontWeight.SemiBold,
+          textAlign = TextAlign.Center,
+          maxLines = 1,
+          modifier = Modifier.weight(1f),
+        )
       }
     }
   }

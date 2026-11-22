@@ -1,4 +1,35 @@
 <?xml version="1.0" encoding="utf-8"?>
-<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
-    <solid android:color="#151517" />
-</shape>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path android:pathData="M0,0h108v108h-108z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:endX="82"
+                android:endY="108"
+                android:startX="26"
+                android:startY="0"
+                android:type="linear">
+                <item android:color="#FF282C36" android:offset="0" />
+                <item android:color="#FF1A1D24" android:offset="0.55" />
+                <item android:color="#FF111216" android:offset="1" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <!-- Subtle warm radial glow behind the 3D orange badge -->
+    <path android:pathData="M54,54m-44,0a44,44 0,1 1,88 0a44,44 0,1 1,-88 0">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:centerX="54"
+                android:centerY="50"
+                android:gradientRadius="42"
+                android:type="radial">
+                <item android:color="#30FF8C24" android:offset="0" />
+                <item android:color="#00FF8C24" android:offset="1" />
+            </gradient>
+        </aapt:attr>
+    </path>
+</vector>

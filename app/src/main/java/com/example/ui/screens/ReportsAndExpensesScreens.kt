@@ -3,9 +3,11 @@ package com.example.ui.screens
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,7 +17,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -32,22 +33,11 @@ import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Share
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
-import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -55,6 +45,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -71,14 +62,21 @@ import com.example.model.PaymentMethod
 import com.example.model.Product
 import com.example.pdf.ReportExporter
 import com.example.pdf.ShareAndPrintHelper
+import com.example.ui.components.Button3D
+import com.example.ui.components.Card3D
+import com.example.ui.components.Chip3D
+import com.example.ui.components.ClayBarChart
+import com.example.ui.components.ClayTones
 import com.example.ui.components.EmptyStatePanel
+import com.example.ui.components.Icon3D
+import com.example.ui.components.TextField3D
 import com.example.ui.components.VyaparFormDialog
 import com.example.ui.components.VyaparTopBar
+import com.example.ui.components.raised3D
 import com.example.ui.theme.AlertRed
-import com.example.ui.theme.CharcoalHeader
 import com.example.ui.theme.EmeraldGreen
+import com.example.ui.theme.LocalVyaparClayPalette
 import com.example.ui.theme.SaffronOrange
-import com.example.ui.theme.SaffronOrangeSoft
 import com.example.util.CurrencyUtils
 import java.io.File
 import java.util.Calendar
@@ -109,6 +107,7 @@ fun ReportsScreen(
   exportDir: File,
   onShowToast: (String) -> Unit,
 ) {
+  val palette = LocalVyaparClayPalette.current
   val context = LocalContext.current
   val sym = business.currencySymbol.ifBlank { "₹" }
   var selectedTab by remember { mutableStateOf(ReportTab.SALES) }
@@ -270,42 +269,37 @@ fun ReportsScreen(
       ReportTab.SALES, ReportTab.GST -> ReportExporter.buildInvoicesCsv(periodInvoices, sym)
     }
 
-  Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-    // Segmented Report Tabs (matching Screen 9)
-    Surface(color = MaterialTheme.colorScheme.surface, tonalElevation = 1.dp) {
-      Column(modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp)) {
+  Column(modifier = Modifier.fillMaxSize().background(palette.background)) {
+    // 3D Raised Segmented Tabs Card
+    Box(modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp)) {
+      Card3D(
+        cornerRadius = 22.dp,
+        shadowDepth = 4.dp,
+        contentPadding = PaddingValues(vertical = 10.dp),
+      ) {
         Row(
-          modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 14.dp),
+          modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp),
           horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
           ReportTab.entries.forEach { tab ->
-            FilterChip(
+            Chip3D(
               selected = selectedTab == tab,
               onClick = { selectedTab = tab },
-              label = { Text(tab.label, fontSize = 12.sp) },
-              colors =
-                FilterChipDefaults.filterChipColors(
-                  selectedContainerColor = SaffronOrange,
-                  selectedLabelColor = Color.White,
-                ),
+              label = tab.label,
             )
           }
         }
-        Spacer(Modifier.height(6.dp))
+        Spacer(Modifier.height(8.dp))
         Row(
-          modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 14.dp),
-          horizontalArrangement = Arrangement.spacedBy(6.dp),
+          modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp),
+          horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
           ReportPeriod.entries.forEach { p ->
-            FilterChip(
+            Chip3D(
               selected = selectedPeriod == p,
               onClick = { selectedPeriod = p },
-              label = { Text(p.label, fontSize = 11.sp) },
-              colors =
-                FilterChipDefaults.filterChipColors(
-                  selectedContainerColor = CharcoalHeader,
-                  selectedLabelColor = Color.White,
-                ),
+              label = p.label,
+              selectedTone = ClayTones.Blue,
             )
           }
         }
@@ -314,53 +308,57 @@ fun ReportsScreen(
 
     LazyColumn(
       modifier = Modifier.weight(1f).fillMaxWidth(),
-      contentPadding = PaddingValues(16.dp),
+      contentPadding = PaddingValues(start = 14.dp, end = 14.dp, top = 6.dp, bottom = 20.dp),
       verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-      // Export PDF & CSV Bar
+      // Export PDF, CSV & Share 3D Buttons
       item {
         Row(
           modifier = Modifier.fillMaxWidth(),
           horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-          Button(
+          Button3D(
             onClick = {
               val f = buildCurrentReportPdf()
               pendingPdfFile = f
               savePdfLauncher.launch(f.name)
             },
-            shape = RoundedCornerShape(10.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = SaffronOrange),
+            cornerRadius = 16.dp,
+            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 10.dp),
             modifier = Modifier.weight(1f).testTag("export_report_pdf"),
           ) {
             Icon(Icons.Filled.PictureAsPdf, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
             Spacer(Modifier.width(4.dp))
-            Text("PDF", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            Text("PDF", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold)
           }
-          OutlinedButton(
+          Button3D(
             onClick = {
               val csv = buildCurrentCsv()
               pendingCsvContent = csv
               saveCsvLauncher.launch("VYAPAR_${selectedTab.label}_${selectedPeriod.label}.csv")
             },
-            shape = RoundedCornerShape(10.dp),
+            isPrimary = false,
+            cornerRadius = 16.dp,
+            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 10.dp),
             modifier = Modifier.weight(1f).testTag("export_report_csv"),
           ) {
             Icon(Icons.Filled.Download, contentDescription = null, modifier = Modifier.size(16.dp))
             Spacer(Modifier.width(4.dp))
             Text("CSV", fontSize = 12.sp, fontWeight = FontWeight.Bold)
           }
-          OutlinedButton(
+          Button3D(
             onClick = {
               val f = buildCurrentReportPdf()
               ShareAndPrintHelper.sharePdfDocument(context, f, "Share ${selectedTab.label} Report")
             },
-            shape = RoundedCornerShape(10.dp),
+            isPrimary = false,
+            cornerRadius = 16.dp,
+            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 10.dp),
             modifier = Modifier.weight(1f),
           ) {
             Icon(Icons.Filled.Share, contentDescription = null, modifier = Modifier.size(16.dp))
             Spacer(Modifier.width(4.dp))
-            Text("Share", fontSize = 12.sp)
+            Text("Share", fontSize = 12.sp, fontWeight = FontWeight.Bold)
           }
         }
       }
@@ -368,38 +366,37 @@ fun ReportsScreen(
       when (selectedTab) {
         ReportTab.SALES -> {
           item {
-            Surface(
-              shape = RoundedCornerShape(18.dp),
-              color = MaterialTheme.colorScheme.surface,
-              tonalElevation = 1.dp,
+            Card3D(
+              cornerRadius = 24.dp,
+              shadowDepth = 5.dp,
               modifier = Modifier.fillMaxWidth(),
+              contentPadding = PaddingValues(16.dp),
             ) {
-              Column(modifier = Modifier.padding(16.dp)) {
-                Text(
-                  "Total Sales (${selectedPeriod.label})",
-                  style = MaterialTheme.typography.bodyMedium,
-                  color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Spacer(Modifier.height(4.dp))
-                Text(
-                  text = CurrencyUtils.formatPaise(totalSalesPaise, sym),
-                  style = MaterialTheme.typography.displaySmall,
-                  fontWeight = FontWeight.ExtraBold,
-                )
-                Text(
-                  text = "${periodInvoices.size} bill(s) recorded",
-                  color = EmeraldGreen,
-                  fontWeight = FontWeight.SemiBold,
-                  fontSize = 13.sp,
-                )
-                Spacer(Modifier.height(14.dp))
-                SalesBarChart(
-                  points = chartPoints,
-                  barColor = EmeraldGreen,
-                  labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                  modifier = Modifier.fillMaxWidth().height(145.dp),
-                )
-              }
+              Text(
+                "Total Sales (${selectedPeriod.label})",
+                style = MaterialTheme.typography.bodyMedium,
+                color = palette.textSecondary,
+              )
+              Spacer(Modifier.height(4.dp))
+              Text(
+                text = CurrencyUtils.formatPaise(totalSalesPaise, sym),
+                style = MaterialTheme.typography.displaySmall,
+                fontWeight = FontWeight.ExtraBold,
+                color = palette.textPrimary,
+              )
+              Text(
+                text = "${periodInvoices.size} bill(s) recorded",
+                color = EmeraldGreen,
+                fontWeight = FontWeight.Bold,
+                fontSize = 13.sp,
+              )
+              Spacer(Modifier.height(14.dp))
+              ClayBarChart(
+                points = chartPoints,
+                tone = ClayTones.Green,
+                labelColor = palette.textSecondary,
+                modifier = Modifier.fillMaxWidth().height(150.dp),
+              )
             }
           }
           items(periodInvoices, key = { it.id }) { inv ->
@@ -443,24 +440,25 @@ fun ReportsScreen(
         }
         ReportTab.PROFIT_LOSS -> {
           item {
-            Surface(
-              shape = RoundedCornerShape(16.dp),
-              color = MaterialTheme.colorScheme.surface,
+            Card3D(
+              cornerRadius = 24.dp,
+              shadowDepth = 5.dp,
               modifier = Modifier.fillMaxWidth(),
+              contentPadding = PaddingValues(16.dp),
             ) {
-              Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Profit & Loss (${selectedPeriod.label})", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+              Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("Profit & Loss (${selectedPeriod.label})", fontWeight = FontWeight.ExtraBold, fontSize = 16.sp, color = palette.textPrimary)
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                  Text("Total Sales Revenue")
+                  Text("Total Sales Revenue", color = palette.textSecondary)
                   Text(CurrencyUtils.formatPaise(totalSalesPaise, sym, true), fontWeight = FontWeight.Bold, color = EmeraldGreen)
                 }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                  Text("Total Expenses")
+                  Text("Total Expenses", color = palette.textSecondary)
                   Text("-${CurrencyUtils.formatPaise(totalExpensesPaise, sym, true)}", fontWeight = FontWeight.Bold, color = AlertRed)
                 }
-                HorizontalDivider()
+                HorizontalDivider(color = palette.glossBorderBottom.copy(alpha = 0.4f))
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                  Text("Net Profit / Loss", fontWeight = FontWeight.Bold)
+                  Text("Net Profit / Loss", fontWeight = FontWeight.ExtraBold, color = palette.textPrimary)
                   Text(
                     CurrencyUtils.formatPaise(netProfitPaise, sym, true),
                     fontWeight = FontWeight.ExtraBold,
@@ -481,28 +479,29 @@ fun ReportsScreen(
         }
         ReportTab.GST -> {
           item {
-            Surface(
-              shape = RoundedCornerShape(16.dp),
-              color = MaterialTheme.colorScheme.surface,
+            Card3D(
+              cornerRadius = 24.dp,
+              shadowDepth = 5.dp,
               modifier = Modifier.fillMaxWidth(),
+              contentPadding = PaddingValues(16.dp),
             ) {
-              Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("GST Summary (${selectedPeriod.label})", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+              Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("GST Summary (${selectedPeriod.label})", fontWeight = FontWeight.ExtraBold, fontSize = 16.sp, color = palette.textPrimary)
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                  Text("CGST Collected")
-                  Text(CurrencyUtils.formatPaise(totalCgst, sym, true), fontWeight = FontWeight.SemiBold)
+                  Text("CGST Collected", color = palette.textSecondary)
+                  Text(CurrencyUtils.formatPaise(totalCgst, sym, true), fontWeight = FontWeight.Bold, color = palette.textPrimary)
                 }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                  Text("SGST Collected")
-                  Text(CurrencyUtils.formatPaise(totalSgst, sym, true), fontWeight = FontWeight.SemiBold)
+                  Text("SGST Collected", color = palette.textSecondary)
+                  Text(CurrencyUtils.formatPaise(totalSgst, sym, true), fontWeight = FontWeight.Bold, color = palette.textPrimary)
                 }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                  Text("IGST Collected")
-                  Text(CurrencyUtils.formatPaise(totalIgst, sym, true), fontWeight = FontWeight.SemiBold)
+                  Text("IGST Collected", color = palette.textSecondary)
+                  Text(CurrencyUtils.formatPaise(totalIgst, sym, true), fontWeight = FontWeight.Bold, color = palette.textPrimary)
                 }
-                HorizontalDivider()
+                HorizontalDivider(color = palette.glossBorderBottom.copy(alpha = 0.4f))
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                  Text("Total GST Liability", fontWeight = FontWeight.Bold)
+                  Text("Total GST Liability", fontWeight = FontWeight.ExtraBold, color = palette.textPrimary)
                   Text(CurrencyUtils.formatPaise(totalTax, sym, true), fontWeight = FontWeight.ExtraBold, color = SaffronOrange)
                 }
               }
@@ -546,26 +545,27 @@ fun ReportsScreen(
 
 @Composable
 private fun ReportRowCard(title: String, subtitle: String, amount: String, amountColor: Color) {
-  Surface(
-    shape = RoundedCornerShape(14.dp),
-    color = MaterialTheme.colorScheme.surface,
-    tonalElevation = 1.dp,
+  val palette = LocalVyaparClayPalette.current
+  Card3D(
+    cornerRadius = 18.dp,
+    shadowDepth = 3.dp,
     modifier = Modifier.fillMaxWidth(),
+    contentPadding = PaddingValues(14.dp),
   ) {
     Row(
-      modifier = Modifier.padding(14.dp),
+      modifier = Modifier.fillMaxWidth(),
       horizontalArrangement = Arrangement.SpaceBetween,
       verticalAlignment = Alignment.CenterVertically,
     ) {
       Column(modifier = Modifier.weight(1f)) {
-        Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+        Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.ExtraBold, color = palette.textPrimary)
         Text(
           subtitle,
           style = MaterialTheme.typography.bodySmall,
-          color = MaterialTheme.colorScheme.onSurfaceVariant,
+          color = palette.textSecondary,
         )
       }
-      Text(amount, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = amountColor)
+      Text(amount, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.ExtraBold, color = amountColor)
     }
   }
 }
@@ -582,6 +582,7 @@ fun ExpensesScreen(
 ) {
   BackHandler(onBack = onBack)
 
+  val palette = LocalVyaparClayPalette.current
   var selectedCat by remember { mutableStateOf<ExpenseCategory?>(null) }
   var showAddDialog by remember { mutableStateOf(false) }
 
@@ -592,6 +593,7 @@ fun ExpensesScreen(
   val totalPaise = filtered.sumOf { it.amountPaise }
 
   Scaffold(
+    containerColor = palette.background,
     topBar = {
       VyaparTopBar(
         title = "Expenses",
@@ -602,56 +604,64 @@ fun ExpensesScreen(
       )
     },
     floatingActionButton = {
-      FloatingActionButton(
-        onClick = { showAddDialog = true },
-        containerColor = SaffronOrange,
-        contentColor = Color.White,
-        modifier = Modifier.testTag("add_expense_fab"),
+      val fabInteraction = remember { MutableInteractionSource() }
+      val fabPressed by fabInteraction.collectIsPressedAsState()
+      Box(
+        contentAlignment = Alignment.Center,
+        modifier =
+          Modifier.size(58.dp)
+            .raised3D(
+              cornerRadius = 20.dp,
+              isPressed = fabPressed,
+              tone = ClayTones.Orange,
+              shadowDepth = 6.dp,
+            )
+            .clickable(
+              interactionSource = fabInteraction,
+              indication = null,
+              onClick = { showAddDialog = true },
+            )
+            .testTag("add_expense_fab"),
       ) {
-        Icon(Icons.Filled.Add, contentDescription = "Add Expense")
+        Icon(Icons.Filled.Add, contentDescription = "Add Expense", tint = Color.White, modifier = Modifier.size(28.dp))
       }
     },
   ) { innerPadding ->
     Column(
       modifier =
         Modifier.fillMaxSize()
-          .background(MaterialTheme.colorScheme.background)
+          .background(palette.background)
           .padding(innerPadding)
     ) {
-      Surface(color = MaterialTheme.colorScheme.surface, tonalElevation = 1.dp) {
-        Column(modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp)) {
+      Box(modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp)) {
+        Card3D(
+          cornerRadius = 22.dp,
+          shadowDepth = 4.dp,
+          contentPadding = PaddingValues(vertical = 12.dp),
+        ) {
           Text(
             text = "Total Expenses: ${CurrencyUtils.formatPaise(totalPaise, currencySymbol)}",
             style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
+            fontWeight = FontWeight.ExtraBold,
             color = AlertRed,
-            modifier = Modifier.padding(horizontal = 16.dp),
+            modifier = Modifier.padding(horizontal = 14.dp),
           )
-          Spacer(Modifier.height(8.dp))
+          Spacer(Modifier.height(10.dp))
           Row(
-            modifier = Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 14.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
           ) {
-            FilterChip(
+            Chip3D(
               selected = selectedCat == null,
               onClick = { selectedCat = null },
-              label = { Text("All") },
-              colors =
-                FilterChipDefaults.filterChipColors(
-                  selectedContainerColor = SaffronOrange,
-                  selectedLabelColor = Color.White,
-                ),
+              label = "All",
             )
             ExpenseCategory.entries.forEach { cat ->
-              FilterChip(
+              Chip3D(
                 selected = selectedCat == cat,
                 onClick = { selectedCat = cat },
-                label = { Text(cat.label, fontSize = 12.sp) },
-                colors =
-                  FilterChipDefaults.filterChipColors(
-                    selectedContainerColor = CharcoalHeader,
-                    selectedLabelColor = Color.White,
-                  ),
+                label = cat.label,
+                selectedTone = ClayTones.Purple,
               )
             }
           }
@@ -668,45 +678,54 @@ fun ExpensesScreen(
         )
       } else {
         LazyColumn(
-          contentPadding = PaddingValues(16.dp),
+          contentPadding = PaddingValues(start = 14.dp, end = 14.dp, top = 6.dp, bottom = 18.dp),
           verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
           items(filtered, key = { it.id }) { exp ->
-            Surface(
-              shape = RoundedCornerShape(14.dp),
-              color = MaterialTheme.colorScheme.surface,
-              tonalElevation = 1.dp,
+            Card3D(
+              cornerRadius = 20.dp,
+              shadowDepth = 4.dp,
               modifier = Modifier.fillMaxWidth(),
+              contentPadding = PaddingValues(14.dp),
             ) {
               Row(
-                modifier = Modifier.padding(14.dp),
+                modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
               ) {
-                Surface(
-                  shape = RoundedCornerShape(10.dp),
-                  color = SaffronOrangeSoft,
-                  modifier = Modifier.size(40.dp),
-                ) {
-                  Box(contentAlignment = Alignment.Center) {
-                    Icon(Icons.Filled.AccountBalanceWallet, contentDescription = null, tint = SaffronOrange)
-                  }
-                }
+                Icon3D(
+                  imageVector = Icons.Filled.AccountBalanceWallet,
+                  contentDescription = null,
+                  tone = ClayTones.Purple,
+                  size = 32.dp,
+                )
                 Spacer(Modifier.width(12.dp))
                 Column(modifier = Modifier.weight(1f)) {
-                  Text(exp.title, fontWeight = FontWeight.Bold)
+                  Text(exp.title, fontWeight = FontWeight.ExtraBold, color = palette.textPrimary)
                   Text(
                     "${exp.category.label} • ${exp.paymentMethod.label} • ${CurrencyUtils.formatDate(exp.timestamp)}",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = palette.textSecondary,
                   )
                 }
                 Text(
                   CurrencyUtils.formatPaise(exp.amountPaise, currencySymbol),
-                  fontWeight = FontWeight.Bold,
+                  fontWeight = FontWeight.ExtraBold,
                   color = AlertRed,
                 )
-                IconButton(onClick = { onDeleteExpense(exp.id) }) {
-                  Icon(Icons.Filled.DeleteOutline, contentDescription = "Delete Expense", tint = AlertRed)
+                Spacer(Modifier.width(6.dp))
+                Box(
+                  contentAlignment = Alignment.Center,
+                  modifier =
+                    Modifier.size(34.dp)
+                      .clip(RoundedCornerShape(10.dp))
+                      .clickable { onDeleteExpense(exp.id) },
+                ) {
+                  Icon3D(
+                    imageVector = Icons.Filled.DeleteOutline,
+                    contentDescription = "Delete Expense",
+                    tone = ClayTones.Red,
+                    size = 20.dp,
+                  )
                 }
               }
             }
@@ -728,68 +747,63 @@ fun ExpensesScreen(
       title = "Add Expense",
       onDismiss = { showAddDialog = false },
       scrollContent = {
-        OutlinedTextField(
+        TextField3D(
           value = title,
           onValueChange = { title = it },
-          label = { Text("Expense Title *") },
-          singleLine = true,
+          label = "Expense Title *",
           modifier = Modifier.fillMaxWidth(),
         )
-        OutlinedTextField(
+        TextField3D(
           value = amount,
           onValueChange = { amount = it },
-          label = { Text("Amount ($currencySymbol) *") },
+          label = "Amount ($currencySymbol) *",
           keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-          singleLine = true,
           modifier = Modifier.fillMaxWidth(),
         )
-        Text("Category", style = MaterialTheme.typography.labelMedium)
+        Text("Category", style = MaterialTheme.typography.labelMedium, color = palette.textSecondary, fontWeight = FontWeight.SemiBold)
         Row(
           modifier = Modifier.horizontalScroll(rememberScrollState()),
           horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
           ExpenseCategory.entries.forEach { cat ->
-            FilterChip(
+            Chip3D(
               selected = category == cat,
               onClick = { category = cat },
-              label = { Text(cat.label, fontSize = 11.sp) },
-              colors =
-                FilterChipDefaults.filterChipColors(
-                  selectedContainerColor = SaffronOrange,
-                  selectedLabelColor = Color.White,
-                ),
+              label = cat.label,
             )
           }
         }
+        Text("Payment Mode", style = MaterialTheme.typography.labelMedium, color = palette.textSecondary, fontWeight = FontWeight.SemiBold)
         Row(
           modifier = Modifier.horizontalScroll(rememberScrollState()),
           horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
           listOf(PaymentMethod.CASH, PaymentMethod.UPI, PaymentMethod.BANK_TRANSFER, PaymentMethod.CARD).forEach { m ->
-            FilterChip(
+            Chip3D(
               selected = method == m,
               onClick = { method = m },
-              label = { Text(m.label, fontSize = 11.sp) },
+              label = m.label,
+              selectedTone = ClayTones.Green,
             )
           }
         }
-        OutlinedTextField(
+        TextField3D(
           value = notes,
           onValueChange = { notes = it },
-          label = { Text("Notes") },
-          singleLine = true,
+          label = "Notes",
           modifier = Modifier.fillMaxWidth(),
         )
       },
       bottomButtons = {
-        TextButton(
+        Button3D(
           onClick = { showAddDialog = false },
-          modifier = Modifier.heightIn(min = 48.dp),
+          isPrimary = false,
+          cornerRadius = 16.dp,
         ) {
-          Text("Cancel")
+          Text("Cancel", fontWeight = FontWeight.SemiBold)
         }
-        Spacer(Modifier.width(8.dp))
-        Button(
+        Spacer(Modifier.width(10.dp))
+        Button3D(
           onClick = {
             if (title.isNotBlank()) {
               onUpsertExpense(
@@ -805,11 +819,9 @@ fun ExpensesScreen(
               showAddDialog = false
             }
           },
-          shape = RoundedCornerShape(10.dp),
-          colors = ButtonDefaults.buttonColors(containerColor = SaffronOrange),
-          modifier = Modifier.heightIn(min = 48.dp),
+          cornerRadius = 16.dp,
         ) {
-          Text("Save", color = Color.White, fontWeight = FontWeight.Bold)
+          Text("Save", color = Color.White, fontWeight = FontWeight.ExtraBold)
         }
       },
     )

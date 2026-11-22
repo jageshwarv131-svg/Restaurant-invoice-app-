@@ -1,10 +1,11 @@
 package com.example.ui.screens
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,16 +17,12 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -37,23 +34,12 @@ import androidx.compose.material.icons.filled.Inventory
 import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SwapVert
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
-import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -61,6 +47,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
@@ -68,23 +55,27 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.DialogProperties
 import com.example.model.Customer
 import com.example.model.InventoryMovement
 import com.example.model.Invoice
 import com.example.model.MovementType
 import com.example.model.Product
+import com.example.ui.components.Button3D
+import com.example.ui.components.Card3D
+import com.example.ui.components.Chip3D
+import com.example.ui.components.ClayTone
+import com.example.ui.components.ClayTones
 import com.example.ui.components.EmptyStatePanel
+import com.example.ui.components.Icon3D
+import com.example.ui.components.TextField3D
 import com.example.ui.components.VyaparFormDialog
 import com.example.ui.components.VyaparTopBar
+import com.example.ui.components.raised3D
 import com.example.ui.components.rememberSafeBottomPadding
 import com.example.ui.theme.AlertRed
-import com.example.ui.theme.AlertRedSoft
-import com.example.ui.theme.CharcoalHeader
 import com.example.ui.theme.EmeraldGreen
-import com.example.ui.theme.EmeraldGreenSoft
+import com.example.ui.theme.LocalVyaparClayPalette
 import com.example.ui.theme.SaffronOrange
-import com.example.ui.theme.SaffronOrangeSoft
 import com.example.util.CurrencyUtils
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -104,6 +95,11 @@ fun CustomersScreen(
   onOpenInvoicePreview: (Invoice) -> Unit,
 ) {
   BackHandler(onBack = onBack)
+
+  val palette = LocalVyaparClayPalette.current
+  val mutedIconTone = remember(palette.isDark) {
+    ClayTone(palette.neutralIconTop, palette.textSecondary, palette.neutralIconBottom)
+  }
 
   var searchQuery by remember { mutableStateOf("") }
   var showEditor by remember { mutableStateOf(openAddImmediately) }
@@ -127,6 +123,7 @@ fun CustomersScreen(
     }
 
   Scaffold(
+    containerColor = palette.background,
     topBar = {
       VyaparTopBar(
         title = "Customers",
@@ -137,35 +134,52 @@ fun CustomersScreen(
       )
     },
     floatingActionButton = {
-      FloatingActionButton(
-        onClick = {
-          editingCustomer = null
-          showEditor = true
-        },
-        containerColor = SaffronOrange,
-        contentColor = Color.White,
-        modifier = Modifier.testTag("add_customer_fab"),
+      val fabInteraction = remember { MutableInteractionSource() }
+      val fabPressed by fabInteraction.collectIsPressedAsState()
+      Box(
+        contentAlignment = Alignment.Center,
+        modifier =
+          Modifier.size(58.dp)
+            .raised3D(
+              cornerRadius = 20.dp,
+              isPressed = fabPressed,
+              tone = ClayTones.Orange,
+              shadowDepth = 6.dp,
+            )
+            .clickable(
+              interactionSource = fabInteraction,
+              indication = null,
+              onClick = {
+                editingCustomer = null
+                showEditor = true
+              },
+            )
+            .testTag("add_customer_fab"),
       ) {
-        Icon(Icons.Filled.Add, contentDescription = "Add Customer")
+        Icon(Icons.Filled.Add, contentDescription = "Add Customer", tint = Color.White, modifier = Modifier.size(28.dp))
       }
     },
   ) { innerPadding ->
     Column(
       modifier =
         Modifier.fillMaxSize()
-          .background(MaterialTheme.colorScheme.background)
+          .background(palette.background)
           .padding(innerPadding)
     ) {
-      Surface(color = MaterialTheme.colorScheme.surface, tonalElevation = 1.dp) {
-        OutlinedTextField(
-          value = searchQuery,
-          onValueChange = { searchQuery = it },
-          placeholder = { Text("Search Customer by name or mobile...") },
-          leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
-          singleLine = true,
-          shape = RoundedCornerShape(14.dp),
-          modifier = Modifier.fillMaxWidth().padding(16.dp),
-        )
+      Box(modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp)) {
+        Card3D(
+          cornerRadius = 22.dp,
+          shadowDepth = 4.dp,
+          contentPadding = PaddingValues(12.dp),
+        ) {
+          TextField3D(
+            value = searchQuery,
+            onValueChange = { searchQuery = it },
+            placeholder = "Search Customer by name or mobile...",
+            leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null, tint = SaffronOrange) },
+            modifier = Modifier.fillMaxWidth(),
+          )
+        }
       }
 
       if (filtered.isEmpty()) {
@@ -184,42 +198,41 @@ fun CustomersScreen(
         )
       } else {
         LazyColumn(
-          contentPadding = PaddingValues(16.dp),
-          verticalArrangement = Arrangement.spacedBy(10.dp),
+          contentPadding = PaddingValues(start = 14.dp, end = 14.dp, top = 6.dp, bottom = 18.dp),
+          verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
           items(filtered, key = { it.id }) { customer ->
-            Surface(
-              shape = RoundedCornerShape(16.dp),
-              color = MaterialTheme.colorScheme.surface,
-              tonalElevation = 1.dp,
-              shadowElevation = 2.dp,
-              modifier =
-                Modifier.fillMaxWidth().clickable { selectedCustomerForHistory = customer },
+            Card3D(
+              cornerRadius = 22.dp,
+              shadowDepth = 4.dp,
+              onClick = { selectedCustomerForHistory = customer },
+              modifier = Modifier.fillMaxWidth(),
+              contentPadding = PaddingValues(14.dp),
             ) {
               Row(
-                modifier = Modifier.padding(14.dp),
+                modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
               ) {
-                Surface(
-                  shape = CircleShape,
-                  color = SaffronOrangeSoft,
-                  modifier = Modifier.size(46.dp),
+                Box(
+                  modifier =
+                    Modifier.size(48.dp)
+                      .raised3D(cornerRadius = 24.dp, tone = ClayTones.Orange, shadowDepth = 3.dp),
+                  contentAlignment = Alignment.Center,
                 ) {
-                  Box(contentAlignment = Alignment.Center) {
-                    Text(
-                      text = customer.name.take(1).uppercase(),
-                      color = SaffronOrange,
-                      fontWeight = FontWeight.Bold,
-                      fontSize = 18.sp,
-                    )
-                  }
+                  Text(
+                    text = customer.name.take(1).uppercase(),
+                    color = Color.White,
+                    fontWeight = FontWeight.ExtraBold,
+                    fontSize = 18.sp,
+                  )
                 }
                 Spacer(Modifier.width(12.dp))
                 Column(modifier = Modifier.weight(1f)) {
                   Text(
                     text = customer.name,
                     style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = palette.textPrimary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                   )
@@ -227,7 +240,7 @@ fun CustomersScreen(
                     Text(
                       text = customer.mobile,
                       style = MaterialTheme.typography.bodySmall,
-                      color = MaterialTheme.colorScheme.onSurfaceVariant,
+                      color = palette.textSecondary,
                     )
                   }
                   Text(
@@ -235,7 +248,7 @@ fun CustomersScreen(
                       "Total: ${CurrencyUtils.formatPaise(customer.totalPurchasesPaise, currencySymbol)}",
                     style = MaterialTheme.typography.bodySmall,
                     color = EmeraldGreen,
-                    fontWeight = FontWeight.SemiBold,
+                    fontWeight = FontWeight.Bold,
                   )
                   if (customer.outstandingBalancePaise > 0) {
                     Text(
@@ -243,44 +256,61 @@ fun CustomersScreen(
                         "Due: ${CurrencyUtils.formatPaise(customer.outstandingBalancePaise, currencySymbol)}",
                       style = MaterialTheme.typography.bodySmall,
                       color = AlertRed,
-                      fontWeight = FontWeight.Bold,
+                      fontWeight = FontWeight.ExtraBold,
                     )
                   }
                 }
                 if (customer.outstandingBalancePaise > 0) {
-                  IconButton(onClick = { collectingForCustomer = customer }) {
-                    Icon(
-                      Icons.Filled.Payments,
+                  Box(
+                    contentAlignment = Alignment.Center,
+                    modifier =
+                      Modifier.size(38.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .clickable { collectingForCustomer = customer },
+                  ) {
+                    Icon3D(
+                      imageVector = Icons.Filled.Payments,
                       contentDescription = "Collect Payment",
-                      tint = EmeraldGreen,
+                      tone = ClayTones.Green,
+                      size = 22.dp,
                     )
                   }
                 }
-                IconButton(
-                  onClick = {
-                    editingCustomer = customer
-                    showEditor = true
-                  }
+                Box(
+                  contentAlignment = Alignment.Center,
+                  modifier =
+                    Modifier.size(38.dp)
+                      .clip(RoundedCornerShape(12.dp))
+                      .clickable {
+                        editingCustomer = customer
+                        showEditor = true
+                      },
                 ) {
-                  Icon(
-                    Icons.Filled.Edit,
+                  Icon3D(
+                    imageVector = Icons.Filled.Edit,
                     contentDescription = "Edit Customer",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(20.dp),
+                    tone = mutedIconTone,
+                    size = 20.dp,
                   )
                 }
-                IconButton(onClick = { pendingDelete = customer }) {
-                  Icon(
-                    Icons.Filled.DeleteOutline,
+                Box(
+                  contentAlignment = Alignment.Center,
+                  modifier =
+                    Modifier.size(38.dp)
+                      .clip(RoundedCornerShape(12.dp))
+                      .clickable { pendingDelete = customer },
+                ) {
+                  Icon3D(
+                    imageVector = Icons.Filled.DeleteOutline,
                     contentDescription = "Delete Customer",
-                    tint = AlertRed,
-                    modifier = Modifier.size(20.dp),
+                    tone = ClayTones.Red,
+                    size = 20.dp,
                   )
                 }
               }
             }
           }
-          item { Spacer(Modifier.height(72.dp)) }
+          item { Spacer(Modifier.height(74.dp)) }
         }
       }
     }
@@ -305,39 +335,38 @@ fun CustomersScreen(
       title = "Collect Due Payment",
       onDismiss = { collectingForCustomer = null },
       scrollContent = {
-        Text("Customer: ${c.name}")
+        Text("Customer: ${c.name}", fontWeight = FontWeight.Bold, color = palette.textPrimary)
         Text(
           "Outstanding: ${CurrencyUtils.formatPaise(c.outstandingBalancePaise, currencySymbol)}",
           color = AlertRed,
-          fontWeight = FontWeight.Bold,
+          fontWeight = FontWeight.ExtraBold,
         )
-        OutlinedTextField(
+        TextField3D(
           value = amountText,
           onValueChange = { amountText = it },
-          label = { Text("Received Amount ($currencySymbol)") },
+          label = "Received Amount ($currencySymbol)",
           keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-          singleLine = true,
           modifier = Modifier.fillMaxWidth(),
         )
       },
       bottomButtons = {
-        TextButton(
+        Button3D(
           onClick = { collectingForCustomer = null },
-          modifier = Modifier.heightIn(min = 48.dp),
+          isPrimary = false,
+          cornerRadius = 16.dp,
         ) {
-          Text("Cancel")
+          Text("Cancel", fontWeight = FontWeight.SemiBold)
         }
-        Spacer(Modifier.width(8.dp))
-        Button(
+        Spacer(Modifier.width(10.dp))
+        Button3D(
           onClick = {
             onCollectPayment(c.id, CurrencyUtils.rupeesToPaise(amountText))
             collectingForCustomer = null
           },
-          shape = RoundedCornerShape(10.dp),
-          colors = ButtonDefaults.buttonColors(containerColor = EmeraldGreen),
-          modifier = Modifier.heightIn(min = 48.dp),
+          tone = ClayTones.Green,
+          cornerRadius = 16.dp,
         ) {
-          Text("Record Payment", color = Color.White, fontWeight = FontWeight.Bold)
+          Text("Record Payment", color = Color.White, fontWeight = FontWeight.ExtraBold)
         }
       },
     )
@@ -348,6 +377,9 @@ fun CustomersScreen(
       remember(invoices, customer.id) { invoices.filter { it.customerId == customer.id } }
     ModalBottomSheet(
       onDismissRequest = { selectedCustomerForHistory = null },
+      containerColor = palette.surfaceTop,
+      contentColor = palette.textPrimary,
+      shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
       contentWindowInsets = { WindowInsets(0, 0, 0, 0) },
     ) {
       val safeBottom = rememberSafeBottomPadding(extraPadding = 20.dp)
@@ -356,45 +388,48 @@ fun CustomersScreen(
           Modifier.fillMaxWidth()
             .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = safeBottom)
       ) {
-        Text("${customer.name} • Purchase History", style = MaterialTheme.typography.titleLarge)
+        Text("${customer.name} • Purchase History", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.ExtraBold, color = palette.textPrimary)
         Spacer(Modifier.height(4.dp))
         Text(
           "Total Purchases: ${CurrencyUtils.formatPaise(customer.totalPurchasesPaise, currencySymbol)}  |  Due: ${CurrencyUtils.formatPaise(customer.outstandingBalancePaise, currencySymbol)}",
           style = MaterialTheme.typography.bodyMedium,
-          color = MaterialTheme.colorScheme.onSurfaceVariant,
+          color = palette.textSecondary,
         )
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(14.dp))
         if (custInvoices.isEmpty()) {
-          Text("No invoices for this customer yet.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+          Text("No invoices for this customer yet.", color = palette.textSecondary)
         } else {
           LazyColumn(
             modifier = Modifier.weight(1f, fill = false).heightIn(max = 280.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
           ) {
             items(custInvoices, key = { it.id }) { inv ->
-              Surface(
-                shape = RoundedCornerShape(12.dp),
-                color = MaterialTheme.colorScheme.background,
-                modifier =
-                  Modifier.fillMaxWidth().clickable {
-                    selectedCustomerForHistory = null
-                    onOpenInvoicePreview(inv)
-                  },
+              Card3D(
+                cornerRadius = 18.dp,
+                shadowDepth = 3.dp,
+                onClick = {
+                  selectedCustomerForHistory = null
+                  onOpenInvoicePreview(inv)
+                },
+                modifier = Modifier.fillMaxWidth(),
+                contentPadding = PaddingValues(12.dp),
               ) {
                 Row(
-                  modifier = Modifier.padding(12.dp),
+                  modifier = Modifier.fillMaxWidth(),
                   horizontalArrangement = Arrangement.SpaceBetween,
+                  verticalAlignment = Alignment.CenterVertically,
                 ) {
                   Column {
-                    Text(inv.invoiceNumber, fontWeight = FontWeight.Bold)
+                    Text(inv.invoiceNumber, fontWeight = FontWeight.ExtraBold, color = palette.textPrimary)
                     Text(
                       CurrencyUtils.formatDateTime(inv.timestamp),
                       style = MaterialTheme.typography.bodySmall,
+                      color = palette.textSecondary,
                     )
                   }
                   Text(
                     CurrencyUtils.formatPaise(inv.grandTotalPaise, currencySymbol),
-                    fontWeight = FontWeight.Bold,
+                    fontWeight = FontWeight.ExtraBold,
                     color = SaffronOrange,
                   )
                 }
@@ -408,23 +443,32 @@ fun CustomersScreen(
   }
 
   pendingDelete?.let { c ->
-    AlertDialog(
-      onDismissRequest = { pendingDelete = null },
-      properties = DialogProperties(decorFitsSystemWindows = false),
-      modifier = Modifier.statusBarsPadding().navigationBarsPadding().imePadding(),
-      title = { Text("Delete Customer?") },
-      text = { Text("Remove \"${c.name}\" from your customers list?") },
-      confirmButton = {
-        TextButton(
+    VyaparFormDialog(
+      title = "Delete Customer?",
+      onDismiss = { pendingDelete = null },
+      scrollContent = {
+        Text("Remove \"${c.name}\" from your customers list?", color = palette.textSecondary)
+      },
+      bottomButtons = {
+        Button3D(
+          onClick = { pendingDelete = null },
+          isPrimary = false,
+          cornerRadius = 14.dp,
+        ) {
+          Text("Cancel", fontWeight = FontWeight.SemiBold)
+        }
+        Spacer(Modifier.width(10.dp))
+        Button3D(
           onClick = {
             onDeleteCustomer(c.id)
             pendingDelete = null
-          }
+          },
+          tone = ClayTones.Red,
+          cornerRadius = 14.dp,
         ) {
-          Text("Delete", color = AlertRed, fontWeight = FontWeight.Bold)
+          Text("Delete", color = Color.White, fontWeight = FontWeight.Bold)
         }
       },
-      dismissButton = { TextButton(onClick = { pendingDelete = null }) { Text("Cancel") } },
     )
   }
 }
@@ -446,60 +490,59 @@ private fun CustomerEditorDialog(
     title = if (initial == null) "Add Customer" else "Edit Customer",
     onDismiss = onDismiss,
     scrollContent = {
-      OutlinedTextField(
+      TextField3D(
         value = name,
         onValueChange = {
           name = it
           nameError = false
         },
-        label = { Text("Customer Name *") },
+        label = "Customer Name *",
         isError = nameError,
-        singleLine = true,
+        supportingText = if (nameError) ({ Text("Enter customer name") }) else null,
         modifier = Modifier.fillMaxWidth(),
       )
-      OutlinedTextField(
+      TextField3D(
         value = mobile,
         onValueChange = { mobile = it },
-        label = { Text("Mobile Number") },
+        label = "Mobile Number",
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
-        singleLine = true,
         modifier = Modifier.fillMaxWidth(),
       )
-      OutlinedTextField(
+      TextField3D(
         value = whatsapp,
         onValueChange = { whatsapp = it },
-        label = { Text("WhatsApp Number") },
+        label = "WhatsApp Number",
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
-        singleLine = true,
         modifier = Modifier.fillMaxWidth(),
       )
-      OutlinedTextField(
+      TextField3D(
         value = address,
         onValueChange = { address = it },
-        label = { Text("Address") },
+        label = "Address",
+        singleLine = false,
         modifier = Modifier.fillMaxWidth(),
       )
-      OutlinedTextField(
+      TextField3D(
         value = gstin,
         onValueChange = { gstin = it.take(15) },
-        label = { Text("Customer GSTIN (Optional)") },
-        singleLine = true,
+        label = "Customer GSTIN (Optional)",
         modifier = Modifier.fillMaxWidth(),
       )
     },
     bottomButtons = {
-      TextButton(
+      Button3D(
         onClick = onDismiss,
-        modifier = Modifier.heightIn(min = 48.dp),
+        isPrimary = false,
+        cornerRadius = 16.dp,
       ) {
-        Text("Cancel")
+        Text("Cancel", fontWeight = FontWeight.SemiBold)
       }
-      Spacer(Modifier.width(8.dp))
-      Button(
+      Spacer(Modifier.width(10.dp))
+      Button3D(
         onClick = {
           if (name.trim().isEmpty()) {
             nameError = true
-            return@Button
+            return@Button3D
           }
           onSave(
             Customer(
@@ -515,11 +558,9 @@ private fun CustomerEditorDialog(
             )
           )
         },
-        shape = RoundedCornerShape(10.dp),
-        colors = ButtonDefaults.buttonColors(containerColor = SaffronOrange),
-        modifier = Modifier.heightIn(min = 48.dp),
+        cornerRadius = 16.dp,
       ) {
-        Text("Save", color = Color.White, fontWeight = FontWeight.Bold)
+        Text("Save", color = Color.White, fontWeight = FontWeight.ExtraBold)
       }
     },
   )
@@ -536,6 +577,7 @@ fun InventoryScreen(
 ) {
   BackHandler(onBack = onBack)
 
+  val palette = LocalVyaparClayPalette.current
   var showLowStockOnly by remember { mutableStateOf(false) }
   var showHistoryTab by remember { mutableStateOf(false) }
   var adjustingProduct by remember { mutableStateOf<Product?>(null) }
@@ -546,6 +588,7 @@ fun InventoryScreen(
     }
 
   Scaffold(
+    containerColor = palette.background,
     topBar = {
       VyaparTopBar(
         title = "Inventory & Stock",
@@ -559,52 +602,44 @@ fun InventoryScreen(
     Column(
       modifier =
         Modifier.fillMaxSize()
-          .background(MaterialTheme.colorScheme.background)
+          .background(palette.background)
           .padding(innerPadding)
     ) {
-      Row(
-        modifier =
-          Modifier.fillMaxWidth()
-            .background(MaterialTheme.colorScheme.surface)
-            .padding(horizontal = 16.dp, vertical = 10.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-      ) {
-        FilterChip(
-          selected = !showHistoryTab && !showLowStockOnly,
-          onClick = {
-            showHistoryTab = false
-            showLowStockOnly = false
-          },
-          label = { Text("All Stock (${products.size})") },
-          colors =
-            FilterChipDefaults.filterChipColors(
-              selectedContainerColor = SaffronOrange,
-              selectedLabelColor = Color.White,
-            ),
-        )
-        FilterChip(
-          selected = !showHistoryTab && showLowStockOnly,
-          onClick = {
-            showHistoryTab = false
-            showLowStockOnly = true
-          },
-          label = { Text("Low Alerts (${products.count { it.stockQty <= it.lowStockThreshold }})") },
-          colors =
-            FilterChipDefaults.filterChipColors(
-              selectedContainerColor = AlertRed,
-              selectedLabelColor = Color.White,
-            ),
-        )
-        FilterChip(
-          selected = showHistoryTab,
-          onClick = { showHistoryTab = true },
-          label = { Text("History (${movements.size})") },
-          colors =
-            FilterChipDefaults.filterChipColors(
-              selectedContainerColor = CharcoalHeader,
-              selectedLabelColor = Color.White,
-            ),
-        )
+      Box(modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp)) {
+        Card3D(
+          cornerRadius = 22.dp,
+          shadowDepth = 4.dp,
+          contentPadding = PaddingValues(12.dp),
+        ) {
+          Row(
+            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+          ) {
+            Chip3D(
+              selected = !showHistoryTab && !showLowStockOnly,
+              onClick = {
+                showHistoryTab = false
+                showLowStockOnly = false
+              },
+              label = "All Stock (${products.size})",
+            )
+            Chip3D(
+              selected = !showHistoryTab && showLowStockOnly,
+              onClick = {
+                showHistoryTab = false
+                showLowStockOnly = true
+              },
+              label = "Low Alerts (${products.count { it.stockQty <= it.lowStockThreshold }})",
+              selectedTone = ClayTones.Red,
+            )
+            Chip3D(
+              selected = showHistoryTab,
+              onClick = { showHistoryTab = true },
+              label = "History (${movements.size})",
+              selectedTone = ClayTones.Blue,
+            )
+          }
+        }
       }
 
       if (!showHistoryTab) {
@@ -616,37 +651,39 @@ fun InventoryScreen(
           )
         } else {
           LazyColumn(
-            contentPadding = PaddingValues(16.dp),
+            contentPadding = PaddingValues(start = 14.dp, end = 14.dp, top = 6.dp, bottom = 18.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
           ) {
             items(displayedProducts, key = { it.id }) { prod ->
               val low = prod.stockQty <= prod.lowStockThreshold
-              Surface(
-                shape = RoundedCornerShape(14.dp),
-                color = MaterialTheme.colorScheme.surface,
-                tonalElevation = 1.dp,
+              Card3D(
+                cornerRadius = 20.dp,
+                shadowDepth = 4.dp,
                 modifier = Modifier.fillMaxWidth(),
+                contentPadding = PaddingValues(14.dp),
               ) {
                 Row(
-                  modifier = Modifier.padding(14.dp),
+                  modifier = Modifier.fillMaxWidth(),
                   verticalAlignment = Alignment.CenterVertically,
                 ) {
                   Column(modifier = Modifier.weight(1f)) {
-                    Text(prod.name, fontWeight = FontWeight.Bold)
+                    Text(prod.name, fontWeight = FontWeight.ExtraBold, color = palette.textPrimary)
                     Text(
                       "Current: ${CurrencyUtils.formatQty(prod.stockQty)} ${prod.unit}  •  Min Alert: ${CurrencyUtils.formatQty(prod.lowStockThreshold)}",
                       style = MaterialTheme.typography.bodySmall,
-                      color = if (low) AlertRed else MaterialTheme.colorScheme.onSurfaceVariant,
+                      color = if (low) AlertRed else palette.textSecondary,
+                      fontWeight = if (low) FontWeight.Bold else FontWeight.Normal,
                     )
                   }
-                  Button(
+                  Spacer(Modifier.width(8.dp))
+                  Button3D(
                     onClick = { adjustingProduct = prod },
-                    shape = RoundedCornerShape(10.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = SaffronOrange),
+                    cornerRadius = 14.dp,
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
                   ) {
                     Icon(Icons.Filled.SwapVert, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(4.dp))
-                    Text("Adjust", color = Color.White, fontSize = 12.sp)
+                    Text("Adjust", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                   }
                 }
               }
@@ -662,44 +699,46 @@ fun InventoryScreen(
           )
         } else {
           LazyColumn(
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            contentPadding = PaddingValues(start = 14.dp, end = 14.dp, top = 6.dp, bottom = 18.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
           ) {
             items(movements, key = { it.id }) { move ->
               val positive = move.quantityDelta >= 0
-              Surface(
-                shape = RoundedCornerShape(12.dp),
-                color = MaterialTheme.colorScheme.surface,
+              Card3D(
+                cornerRadius = 18.dp,
+                shadowDepth = 3.dp,
                 modifier = Modifier.fillMaxWidth(),
+                contentPadding = PaddingValues(12.dp),
               ) {
                 Row(
-                  modifier = Modifier.padding(12.dp),
+                  modifier = Modifier.fillMaxWidth(),
                   horizontalArrangement = Arrangement.SpaceBetween,
                   verticalAlignment = Alignment.CenterVertically,
                 ) {
                   Column(modifier = Modifier.weight(1f)) {
-                    Text(move.productName, fontWeight = FontWeight.Bold)
+                    Text(move.productName, fontWeight = FontWeight.ExtraBold, color = palette.textPrimary)
                     Text(
                       "${move.type.label} • ${move.reason}",
                       style = MaterialTheme.typography.bodySmall,
-                      color = MaterialTheme.colorScheme.onSurfaceVariant,
+                      color = palette.textSecondary,
                     )
                     Text(
                       CurrencyUtils.formatDateTime(move.timestamp),
                       style = MaterialTheme.typography.labelSmall,
-                      color = MaterialTheme.colorScheme.onSurfaceVariant,
+                      color = palette.textSecondary,
                     )
                   }
                   Column(horizontalAlignment = Alignment.End) {
                     Text(
                       text =
                         (if (positive) "+" else "") + CurrencyUtils.formatQty(move.quantityDelta),
-                      fontWeight = FontWeight.Bold,
+                      fontWeight = FontWeight.ExtraBold,
                       color = if (positive) EmeraldGreen else AlertRed,
                     )
                     Text(
                       "Bal: ${CurrencyUtils.formatQty(move.stockAfter)}",
                       style = MaterialTheme.typography.labelSmall,
+                      color = palette.textSecondary,
                     )
                   }
                 }
@@ -720,63 +759,56 @@ fun InventoryScreen(
       title = "Update Stock: ${prod.name}",
       onDismiss = { adjustingProduct = null },
       scrollContent = {
-        Text("Current Stock: ${CurrencyUtils.formatQty(prod.stockQty)} ${prod.unit}")
+        Text(
+          "Current Stock: ${CurrencyUtils.formatQty(prod.stockQty)} ${prod.unit}",
+          fontWeight = FontWeight.SemiBold,
+          color = palette.textPrimary,
+        )
         Row(
           modifier = Modifier.horizontalScroll(rememberScrollState()),
           horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
           listOf(MovementType.STOCK_IN, MovementType.STOCK_OUT, MovementType.ADJUSTMENT).forEach { m ->
-            FilterChip(
+            Chip3D(
               selected = type == m,
               onClick = { type = m },
-              label = { Text(m.label, fontSize = 12.sp) },
-              colors =
-                FilterChipDefaults.filterChipColors(
-                  selectedContainerColor = SaffronOrange,
-                  selectedLabelColor = Color.White,
-                ),
+              label = m.label,
             )
           }
         }
-        OutlinedTextField(
+        TextField3D(
           value = qtyText,
           onValueChange = { qtyText = it },
-          label = {
-            Text(
-              if (type == MovementType.ADJUSTMENT) "New Exact Stock Qty" else "Quantity (${prod.unit})"
-            )
-          },
+          label =
+            if (type == MovementType.ADJUSTMENT) "New Exact Stock Qty" else "Quantity (${prod.unit})",
           keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-          singleLine = true,
           modifier = Modifier.fillMaxWidth(),
         )
-        OutlinedTextField(
+        TextField3D(
           value = reason,
           onValueChange = { reason = it },
-          label = { Text("Reason / Note") },
-          singleLine = true,
+          label = "Reason / Note",
           modifier = Modifier.fillMaxWidth(),
         )
       },
       bottomButtons = {
-        TextButton(
+        Button3D(
           onClick = { adjustingProduct = null },
-          modifier = Modifier.heightIn(min = 48.dp),
+          isPrimary = false,
+          cornerRadius = 16.dp,
         ) {
-          Text("Cancel")
+          Text("Cancel", fontWeight = FontWeight.SemiBold)
         }
-        Spacer(Modifier.width(8.dp))
-        Button(
+        Spacer(Modifier.width(10.dp))
+        Button3D(
           onClick = {
-            val q = qtyText.toDoubleOrNull() ?: return@Button
+            val q = qtyText.toDoubleOrNull() ?: return@Button3D
             onAdjustStock(prod.id, type, q, reason.trim())
             adjustingProduct = null
           },
-          shape = RoundedCornerShape(10.dp),
-          colors = ButtonDefaults.buttonColors(containerColor = SaffronOrange),
-          modifier = Modifier.heightIn(min = 48.dp),
+          cornerRadius = 16.dp,
         ) {
-          Text("Update", color = Color.White, fontWeight = FontWeight.Bold)
+          Text("Update", color = Color.White, fontWeight = FontWeight.ExtraBold)
         }
       },
     )

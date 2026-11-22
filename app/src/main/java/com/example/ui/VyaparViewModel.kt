@@ -29,6 +29,7 @@ import com.example.model.OrderStatus
 import com.example.model.PaperFormat
 import com.example.model.PaymentMethod
 import com.example.model.Product
+import com.example.model.ThemePreference
 import com.example.pdf.InvoicePdfGenerator
 import com.example.util.CurrencyUtils
 import java.io.File
@@ -247,8 +248,19 @@ class VyaparViewModel(application: Application) : AndroidViewModel(application) 
     }
   }
 
+  fun setThemePreference(preference: ThemePreference) {
+    viewModelScope.launch {
+      repository.updateSettings(
+        settings.value.copy(
+          themePreference = preference,
+          darkMode = preference == ThemePreference.DARK,
+        )
+      )
+    }
+  }
+
   fun toggleDarkMode(enabled: Boolean) {
-    viewModelScope.launch { repository.updateSettings(settings.value.copy(darkMode = enabled)) }
+    setThemePreference(if (enabled) ThemePreference.DARK else ThemePreference.LIGHT)
   }
 
   fun toggleShopOpen() {

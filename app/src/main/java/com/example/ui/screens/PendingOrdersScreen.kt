@@ -1,10 +1,11 @@
 package com.example.ui.screens
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,12 +15,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -36,22 +33,11 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Receipt
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
-import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -61,6 +47,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
@@ -68,7 +55,6 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.DialogProperties
 import com.example.data.BillingCalculator
 import com.example.data.CartLineInput
 import com.example.model.Customer
@@ -79,18 +65,20 @@ import com.example.model.Order
 import com.example.model.OrderStatus
 import com.example.model.PaymentMethod
 import com.example.model.Product
+import com.example.ui.components.Button3D
+import com.example.ui.components.Card3D
+import com.example.ui.components.Chip3D
+import com.example.ui.components.ClayTones
 import com.example.ui.components.EmptyStatePanel
+import com.example.ui.components.Icon3D
+import com.example.ui.components.TextField3D
 import com.example.ui.components.VyaparFormDialog
 import com.example.ui.components.VyaparTopBar
+import com.example.ui.components.inset3D
+import com.example.ui.components.raised3D
 import com.example.ui.theme.AlertRed
-import com.example.ui.theme.AlertRedSoft
-import com.example.ui.theme.AmberGoldSoft
-import com.example.ui.theme.EmeraldGreen
-import com.example.ui.theme.EmeraldGreenDark
-import com.example.ui.theme.EmeraldGreenSoft
+import com.example.ui.theme.LocalVyaparClayPalette
 import com.example.ui.theme.SaffronOrange
-import com.example.ui.theme.SaffronOrangeDark
-import com.example.ui.theme.SaffronOrangeSoft
 import com.example.util.CurrencyUtils
 
 enum class OrderFilterTab(val label: String) {
@@ -142,6 +130,7 @@ fun OrdersScreen(
 ) {
   BackHandler(onBack = onBack)
 
+  val palette = LocalVyaparClayPalette.current
   var selectedTab by remember { mutableStateOf(OrderFilterTab.PENDING) }
   var searchQuery by remember { mutableStateOf("") }
   var showNewOrderDialog by remember { mutableStateOf(openNewOrderImmediately) }
@@ -186,6 +175,7 @@ fun OrdersScreen(
     }
 
   Scaffold(
+    containerColor = palette.background,
     topBar = {
       VyaparTopBar(
         title = "Pending Orders",
@@ -196,38 +186,50 @@ fun OrdersScreen(
       )
     },
     floatingActionButton = {
-      FloatingActionButton(
-        onClick = { showNewOrderDialog = true },
-        containerColor = SaffronOrange,
-        contentColor = Color.White,
-        modifier = Modifier.testTag("new_order_fab"),
+      val fabInteraction = remember { MutableInteractionSource() }
+      val fabPressed by fabInteraction.collectIsPressedAsState()
+      Box(
+        contentAlignment = Alignment.Center,
+        modifier =
+          Modifier.size(58.dp)
+            .raised3D(
+              cornerRadius = 20.dp,
+              isPressed = fabPressed,
+              tone = ClayTones.Orange,
+              shadowDepth = 6.dp,
+            )
+            .clickable(
+              interactionSource = fabInteraction,
+              indication = null,
+              onClick = { showNewOrderDialog = true },
+            )
+            .testTag("new_order_fab"),
       ) {
-        Icon(Icons.Filled.Add, contentDescription = "New Order")
+        Icon(Icons.Filled.Add, contentDescription = "New Order", tint = Color.White, modifier = Modifier.size(28.dp))
       }
     },
   ) { innerPadding ->
     Column(
       modifier =
         Modifier.fillMaxSize()
-          .background(MaterialTheme.colorScheme.background)
+          .background(palette.background)
           .padding(innerPadding)
     ) {
-      // Search & Filter Tabs (Pending | Completed | Cancelled)
-      Surface(color = MaterialTheme.colorScheme.surface, tonalElevation = 1.dp) {
-        Column(
-          modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
-          verticalArrangement = Arrangement.spacedBy(10.dp),
+      // 3D Raised Search & Filter Tabs Card
+      Box(modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp)) {
+        Card3D(
+          cornerRadius = 22.dp,
+          shadowDepth = 4.dp,
+          contentPadding = PaddingValues(12.dp),
         ) {
-          OutlinedTextField(
+          TextField3D(
             value = searchQuery,
             onValueChange = { searchQuery = it },
-            placeholder = { Text("Search Customer Name, Mobile or Order #...") },
-            leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
-            singleLine = true,
-            shape = RoundedCornerShape(14.dp),
+            placeholder = "Search Customer Name, Mobile or Order #...",
+            leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null, tint = SaffronOrange) },
             modifier = Modifier.fillMaxWidth().testTag("orders_search_input"),
           )
-
+          Spacer(Modifier.height(10.dp))
           Row(
             modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -240,21 +242,17 @@ fun OrdersScreen(
                   OrderFilterTab.CANCELLED -> cancelledCount
                 }
               val selected = selectedTab == tab
-              val selectedColor =
+              val tabTone =
                 when (tab) {
-                  OrderFilterTab.PENDING -> SaffronOrange
-                  OrderFilterTab.COMPLETED -> EmeraldGreen
-                  OrderFilterTab.CANCELLED -> AlertRed
+                  OrderFilterTab.PENDING -> ClayTones.Orange
+                  OrderFilterTab.COMPLETED -> ClayTones.Green
+                  OrderFilterTab.CANCELLED -> ClayTones.Red
                 }
-              FilterChip(
+              Chip3D(
                 selected = selected,
                 onClick = { selectedTab = tab },
-                label = { Text("${tab.label} ($count)", fontWeight = FontWeight.SemiBold) },
-                colors =
-                  FilterChipDefaults.filterChipColors(
-                    selectedContainerColor = selectedColor,
-                    selectedLabelColor = Color.White,
-                  ),
+                label = "${tab.label} ($count)",
+                selectedTone = tabTone,
                 modifier = Modifier.testTag("orders_tab_${tab.name.lowercase()}"),
               )
             }
@@ -285,46 +283,33 @@ fun OrdersScreen(
         )
       } else {
         LazyColumn(
-          contentPadding = PaddingValues(16.dp),
-          verticalArrangement = Arrangement.spacedBy(10.dp),
+          contentPadding = PaddingValues(start = 14.dp, end = 14.dp, top = 6.dp, bottom = 18.dp),
+          verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
           items(filtered, key = { it.id }) { order ->
             val linkedInvoice =
               order.linkedInvoiceId?.let { invId -> invoices.firstOrNull { it.id == invId } }
-            val statusBg =
+            val statusTone =
               when (order.status) {
-                OrderStatus.COMPLETED -> EmeraldGreenSoft
-                OrderStatus.CANCELLED, OrderStatus.REFUNDED -> AlertRedSoft
-                OrderStatus.PENDING, OrderStatus.PROCESSING -> AmberGoldSoft
-              }
-            val statusFg =
-              when (order.status) {
-                OrderStatus.COMPLETED -> EmeraldGreenDark
-                OrderStatus.CANCELLED, OrderStatus.REFUNDED -> AlertRed
-                OrderStatus.PENDING, OrderStatus.PROCESSING -> SaffronOrangeDark
+                OrderStatus.COMPLETED -> ClayTones.Green
+                OrderStatus.CANCELLED, OrderStatus.REFUNDED -> ClayTones.Red
+                OrderStatus.PENDING, OrderStatus.PROCESSING -> ClayTones.Orange
               }
 
-            Surface(
-              shape = RoundedCornerShape(16.dp),
-              color = MaterialTheme.colorScheme.surface,
-              tonalElevation = 1.dp,
-              shadowElevation = 2.dp,
-              modifier =
-                Modifier.fillMaxWidth()
-                  .clickable {
-                    if (order.status == OrderStatus.PENDING || order.status == OrderStatus.PROCESSING) {
-                      settlingOrder = order
-                    } else {
-                      viewingHistoryOrder = order
-                    }
-                  }
-                  .testTag("order_card_${order.orderNumber}"),
+            Card3D(
+              cornerRadius = 22.dp,
+              shadowDepth = 4.dp,
+              onClick = {
+                if (order.status == OrderStatus.PENDING || order.status == OrderStatus.PROCESSING) {
+                  settlingOrder = order
+                } else {
+                  viewingHistoryOrder = order
+                }
+              },
+              modifier = Modifier.fillMaxWidth().testTag("order_card_${order.orderNumber}"),
+              contentPadding = PaddingValues(14.dp),
             ) {
-              Column(
-                modifier = Modifier.padding(14.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-              ) {
-                // Row 1: Order No + Status Badge + Estimated/Final Total
+              Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Row(
                   modifier = Modifier.fillMaxWidth(),
                   horizontalArrangement = Arrangement.SpaceBetween,
@@ -334,18 +319,28 @@ fun OrdersScreen(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                   ) {
+                    Icon3D(
+                      imageVector = Icons.Filled.LocalShipping,
+                      contentDescription = null,
+                      tone = statusTone,
+                      size = 24.dp,
+                    )
                     Text(
                       text = order.orderNumber,
                       style = MaterialTheme.typography.titleSmall,
                       fontWeight = FontWeight.ExtraBold,
+                      color = palette.textPrimary,
                     )
-                    Surface(shape = RoundedCornerShape(50), color = statusBg) {
+                    Box(
+                      modifier =
+                        Modifier.raised3D(cornerRadius = 50.dp, tone = statusTone, shadowDepth = 2.dp)
+                          .padding(horizontal = 9.dp, vertical = 3.dp)
+                    ) {
                       Text(
                         text = order.status.label,
-                        color = statusFg,
+                        color = Color.White,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
                       )
                     }
                   }
@@ -353,41 +348,37 @@ fun OrdersScreen(
                     Text(
                       text = if (order.status == OrderStatus.COMPLETED) "Final Total" else "Est. Total",
                       fontSize = 10.sp,
-                      color = MaterialTheme.colorScheme.onSurfaceVariant,
+                      color = palette.textSecondary,
                     )
                     Text(
                       text = CurrencyUtils.formatPaise(order.totalPaise, currencySymbol),
                       style = MaterialTheme.typography.titleMedium,
-                      fontWeight = FontWeight.Bold,
-                      color = SaffronOrangeDark,
+                      fontWeight = FontWeight.ExtraBold,
+                      color = SaffronOrange,
                     )
                   }
                 }
 
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                HorizontalDivider(color = palette.glossBorderBottom.copy(alpha = 0.35f))
 
-                // Table columns grid: Customer Name, Mobile | Items Count, Date/Time
                 Row(
                   modifier = Modifier.fillMaxWidth(),
                   horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
                   Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                      text = "Customer",
-                      fontSize = 10.sp,
-                      color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                    Text("Customer", fontSize = 10.sp, color = palette.textSecondary)
                     Text(
                       text = order.customerName.ifBlank { "Walk-in Customer" },
                       style = MaterialTheme.typography.bodyMedium,
-                      fontWeight = FontWeight.SemiBold,
+                      fontWeight = FontWeight.Bold,
+                      color = palette.textPrimary,
                       maxLines = 1,
                       overflow = TextOverflow.Ellipsis,
                     )
                     Text(
                       text = order.customerMobile.ifBlank { "No mobile" },
                       style = MaterialTheme.typography.bodySmall,
-                      color = MaterialTheme.colorScheme.onSurfaceVariant,
+                      color = palette.textSecondary,
                     )
                   }
                   Spacer(Modifier.width(10.dp))
@@ -395,12 +386,13 @@ fun OrdersScreen(
                     Text(
                       text = "${order.items.size} item(s)",
                       style = MaterialTheme.typography.bodyMedium,
-                      fontWeight = FontWeight.SemiBold,
+                      fontWeight = FontWeight.Bold,
+                      color = palette.textPrimary,
                     )
                     Text(
                       text = CurrencyUtils.formatDateTime(order.timestamp),
                       style = MaterialTheme.typography.bodySmall,
-                      color = MaterialTheme.colorScheme.onSurfaceVariant,
+                      color = palette.textSecondary,
                     )
                   }
                 }
@@ -408,34 +400,38 @@ fun OrdersScreen(
                 if (order.status == OrderStatus.PENDING || order.status == OrderStatus.PROCESSING) {
                   Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
                   ) {
-                    OutlinedButton(
+                    Button3D(
                       onClick = { editingOrder = order },
-                      shape = RoundedCornerShape(10.dp),
-                      modifier = Modifier.weight(1f).height(40.dp),
+                      isPrimary = false,
+                      cornerRadius = 14.dp,
+                      contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                      modifier = Modifier.weight(1f),
                     ) {
                       Icon(Icons.Filled.Edit, contentDescription = null, modifier = Modifier.size(15.dp))
                       Spacer(Modifier.width(4.dp))
-                      Text("Edit", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                      Text("Edit", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                     }
-                    Button(
+                    Button3D(
                       onClick = { settlingOrder = order },
-                      shape = RoundedCornerShape(10.dp),
-                      colors = ButtonDefaults.buttonColors(containerColor = EmeraldGreen),
-                      modifier = Modifier.weight(1.5f).height(40.dp),
+                      tone = ClayTones.Green,
+                      cornerRadius = 14.dp,
+                      contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                      modifier = Modifier.weight(1.5f),
                     ) {
                       Icon(Icons.Filled.Receipt, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
                       Spacer(Modifier.width(6.dp))
-                      Text("Bill & Confirm", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                      Text("Bill & Confirm", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold)
                     }
                   }
                 } else if (order.status == OrderStatus.COMPLETED && linkedInvoice != null) {
-                  OutlinedButton(
+                  Button3D(
                     onClick = { onOpenInvoicePreview(linkedInvoice) },
-                    shape = RoundedCornerShape(10.dp),
-                    border = BorderStroke(1.dp, SaffronOrange),
-                    modifier = Modifier.fillMaxWidth().height(40.dp),
+                    isPrimary = false,
+                    cornerRadius = 14.dp,
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                    modifier = Modifier.fillMaxWidth(),
                   ) {
                     Icon(Icons.Filled.Receipt, contentDescription = null, tint = SaffronOrange, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(6.dp))
@@ -443,7 +439,7 @@ fun OrdersScreen(
                       text = "View Bill (${linkedInvoice.invoiceNumber})",
                       color = SaffronOrange,
                       fontSize = 12.sp,
-                      fontWeight = FontWeight.Bold,
+                      fontWeight = FontWeight.ExtraBold,
                     )
                   }
                 }
@@ -456,7 +452,6 @@ fun OrdersScreen(
     }
   }
 
-  // Create New Order OR Edit Pending Order Dialog
   if (showNewOrderDialog || editingOrder != null) {
     OrderEditorDialog(
       initialOrder = editingOrder,
@@ -494,7 +489,6 @@ fun OrdersScreen(
     )
   }
 
-  // Settle / Finalize Price / Confirm / Cancel Pending Order Dialog
   settlingOrder?.let { targetOrder ->
     PendingOrderSettleDialog(
       order = targetOrder,
@@ -528,7 +522,6 @@ fun OrdersScreen(
     )
   }
 
-  // Completed / Cancelled Order Details Viewer
   viewingHistoryOrder?.let { order ->
     val linkedInvoice =
       order.linkedInvoiceId?.let { id -> invoices.firstOrNull { it.id == id } }
@@ -539,80 +532,69 @@ fun OrdersScreen(
         Text(
           text = "Customer: ${order.customerName}",
           style = MaterialTheme.typography.titleSmall,
-          fontWeight = FontWeight.Bold,
+          fontWeight = FontWeight.ExtraBold,
+          color = palette.textPrimary,
         )
         if (order.customerMobile.isNotBlank()) {
-          Text(
-            text = "Mobile: ${order.customerMobile}",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-          )
+          Text("Mobile: ${order.customerMobile}", style = MaterialTheme.typography.bodySmall, color = palette.textSecondary)
         }
-        Text(
-          text = "Date: ${CurrencyUtils.formatDateTime(order.timestamp)}",
-          style = MaterialTheme.typography.bodySmall,
-          color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        HorizontalDivider()
+        Text("Date: ${CurrencyUtils.formatDateTime(order.timestamp)}", style = MaterialTheme.typography.bodySmall, color = palette.textSecondary)
+        HorizontalDivider(color = palette.glossBorderBottom.copy(alpha = 0.35f))
         order.items.forEach { item ->
           Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
           ) {
             Column(modifier = Modifier.weight(1f)) {
-              Text(item.name, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+              Text(item.name, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = palette.textPrimary)
               Text(
                 "${CurrencyUtils.formatQty(item.quantity)} ${item.unit} × ${CurrencyUtils.formatPaise(item.unitPricePaise, currencySymbol)}",
                 fontSize = 11.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = palette.textSecondary,
               )
             }
             Text(
               CurrencyUtils.formatPaise(item.lineTotalPaise, currencySymbol),
-              fontWeight = FontWeight.Bold,
+              fontWeight = FontWeight.ExtraBold,
               fontSize = 13.sp,
+              color = palette.textPrimary,
             )
           }
         }
-        HorizontalDivider()
+        HorizontalDivider(color = palette.glossBorderBottom.copy(alpha = 0.35f))
         Row(
           modifier = Modifier.fillMaxWidth(),
           horizontalArrangement = Arrangement.SpaceBetween,
         ) {
-          Text("Total", fontWeight = FontWeight.Bold)
+          Text("Total", fontWeight = FontWeight.ExtraBold, color = palette.textPrimary)
           Text(
             CurrencyUtils.formatPaise(order.totalPaise, currencySymbol),
             fontWeight = FontWeight.ExtraBold,
-            color = SaffronOrangeDark,
+            color = SaffronOrange,
           )
         }
         if (order.notes.isNotBlank()) {
-          Text(
-            "Notes: ${order.notes}",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-          )
+          Text("Notes: ${order.notes}", style = MaterialTheme.typography.bodySmall, color = palette.textSecondary)
         }
       },
       bottomButtons = {
-        TextButton(
+        Button3D(
           onClick = { viewingHistoryOrder = null },
-          modifier = Modifier.heightIn(min = 48.dp),
+          isPrimary = false,
+          cornerRadius = 16.dp,
         ) {
-          Text("Close")
+          Text("Close", fontWeight = FontWeight.SemiBold)
         }
         if (linkedInvoice != null) {
-          Spacer(Modifier.width(8.dp))
-          Button(
+          Spacer(Modifier.width(10.dp))
+          Button3D(
             onClick = {
               viewingHistoryOrder = null
               onOpenInvoicePreview(linkedInvoice)
             },
-            shape = RoundedCornerShape(10.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = SaffronOrange),
-            modifier = Modifier.heightIn(min = 48.dp),
+            cornerRadius = 16.dp,
           ) {
-            Text("View Invoice", color = Color.White, fontWeight = FontWeight.Bold)
+            Text("View Invoice", color = Color.White, fontWeight = FontWeight.ExtraBold)
           }
         }
       },
@@ -633,6 +615,7 @@ private fun OrderEditorDialog(
   onCreateInlineCustomer: (name: String, mobile: String, onSaved: (Customer) -> Unit) -> Unit,
   onSave: (Customer?, String, String, List<CartLineInput>, String) -> Unit,
 ) {
+  val palette = LocalVyaparClayPalette.current
   var selectedCustomer by remember(initialOrder?.id) {
     mutableStateOf(
       initialOrder?.customerId?.let { cid -> customers.firstOrNull { it.id == cid } }
@@ -702,23 +685,22 @@ private fun OrderEditorDialog(
     title = if (initialOrder == null) "New Pending Order" else "Edit ${initialOrder.orderNumber}",
     onDismiss = onDismiss,
     scrollContent = {
-      // Customer Header + Pick / Inline Add toggle
       Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
       ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-          Icon(Icons.Filled.Person, contentDescription = null, tint = SaffronOrange, modifier = Modifier.size(18.dp))
+          Icon3D(Icons.Filled.Person, contentDescription = null, tone = ClayTones.Orange, size = 20.dp)
           Spacer(Modifier.width(6.dp))
-          Text("Customer Details", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+          Text("Customer Details", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.ExtraBold, color = palette.textPrimary)
         }
-        OutlinedButton(
+        Button3D(
           onClick = { showCustomerPicker = !showCustomerPicker },
-          shape = RoundedCornerShape(8.dp),
-          border = BorderStroke(1.dp, SaffronOrange),
-          contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-          modifier = Modifier.height(34.dp).testTag("order_pick_customer_btn"),
+          isPrimary = false,
+          cornerRadius = 12.dp,
+          contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+          modifier = Modifier.testTag("order_pick_customer_btn"),
         ) {
           Text(
             text = if (showCustomerPicker) "Hide List" else "Pick / Add Customer",
@@ -730,58 +712,53 @@ private fun OrderEditorDialog(
       }
 
       if (showCustomerPicker) {
-        Surface(
-          shape = RoundedCornerShape(12.dp),
-          color = MaterialTheme.colorScheme.background,
-          border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        Card3D(
+          cornerRadius = 18.dp,
+          shadowDepth = 3.dp,
           modifier = Modifier.fillMaxWidth(),
+          contentPadding = PaddingValues(12.dp),
         ) {
-          Column(
-            modifier = Modifier.padding(10.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-          ) {
-            OutlinedTextField(
+          Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            TextField3D(
               value = customerSearch,
               onValueChange = { customerSearch = it },
-              placeholder = { Text("Search saved customers...") },
-              leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null, modifier = Modifier.size(18.dp)) },
-              singleLine = true,
+              placeholder = "Search saved customers...",
+              leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null, tint = SaffronOrange, modifier = Modifier.size(18.dp)) },
               modifier = Modifier.fillMaxWidth(),
             )
             if (filteredCustomers.isEmpty()) {
               Text(
                 "No saved customers match.",
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = palette.textSecondary,
               )
             } else {
-              Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+              Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 filteredCustomers.take(5).forEach { cust ->
-                  Surface(
-                    shape = RoundedCornerShape(8.dp),
-                    color = MaterialTheme.colorScheme.surface,
-                    border =
-                      if (selectedCustomer?.id == cust.id) BorderStroke(1.dp, SaffronOrange)
-                      else null,
-                    modifier =
-                      Modifier.fillMaxWidth().clickable {
-                        selectedCustomer = cust
-                        customerName = cust.name
-                        customerMobile = cust.mobile.filter { it.isDigit() }.takeLast(10)
-                        nameError = false
-                        mobileError = false
-                        showCustomerPicker = false
-                      },
+                  Card3D(
+                    cornerRadius = 14.dp,
+                    shadowDepth = 2.dp,
+                    accentBorderColor = if (selectedCustomer?.id == cust.id) SaffronOrange else null,
+                    onClick = {
+                      selectedCustomer = cust
+                      customerName = cust.name
+                      customerMobile = cust.mobile.filter { it.isDigit() }.takeLast(10)
+                      nameError = false
+                      mobileError = false
+                      showCustomerPicker = false
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
                   ) {
                     Row(
-                      modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                      modifier = Modifier.fillMaxWidth(),
                       horizontalArrangement = Arrangement.SpaceBetween,
                     ) {
-                      Text(cust.name, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                      Text(cust.name, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = palette.textPrimary)
                       Text(
                         cust.mobile.ifBlank { "No mobile" },
                         fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = palette.textSecondary,
                       )
                     }
                   }
@@ -789,35 +766,33 @@ private fun OrderEditorDialog(
               }
             }
 
-            HorizontalDivider()
-            Text("Add New Customer Here", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = SaffronOrangeDark)
+            HorizontalDivider(color = palette.glossBorderBottom.copy(alpha = 0.35f))
+            Text("Add New Customer Here", fontSize = 12.sp, fontWeight = FontWeight.ExtraBold, color = SaffronOrange)
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-              OutlinedTextField(
+              TextField3D(
                 value = quickNewCustName,
                 onValueChange = {
                   quickNewCustName = it
                   quickCustError = null
                 },
-                label = { Text("Name") },
-                singleLine = true,
+                label = "Name",
                 modifier = Modifier.weight(1f),
               )
-              OutlinedTextField(
+              TextField3D(
                 value = quickNewCustMobile,
                 onValueChange = {
                   quickNewCustMobile = it.filter { c -> c.isDigit() }.take(10)
                   quickCustError = null
                 },
-                label = { Text("10-digit Mobile") },
+                label = "10-digit Mobile",
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
-                singleLine = true,
                 modifier = Modifier.weight(1f),
               )
             }
             if (quickCustError != null) {
-              Text(quickCustError!!, color = AlertRed, fontSize = 11.sp)
+              Text(quickCustError!!, color = AlertRed, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
             }
-            Button(
+            Button3D(
               onClick = {
                 val n = quickNewCustName.trim()
                 val m = quickNewCustMobile.filter { it.isDigit() }
@@ -838,17 +813,16 @@ private fun OrderEditorDialog(
                   }
                 }
               },
-              shape = RoundedCornerShape(8.dp),
-              colors = ButtonDefaults.buttonColors(containerColor = SaffronOrange),
-              modifier = Modifier.fillMaxWidth().height(40.dp),
+              cornerRadius = 14.dp,
+              modifier = Modifier.fillMaxWidth(),
             ) {
-              Text("Save & Select Customer", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+              Text("Save & Select Customer", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold)
             }
           }
         }
       }
 
-      OutlinedTextField(
+      TextField3D(
         value = customerName,
         onValueChange = {
           customerName = it
@@ -857,14 +831,13 @@ private fun OrderEditorDialog(
           }
           nameError = false
         },
-        label = { Text("Customer Name *") },
+        label = "Customer Name *",
         isError = nameError,
         supportingText = if (nameError) ({ Text("Enter customer name") }) else null,
-        singleLine = true,
         modifier = Modifier.fillMaxWidth().testTag("order_customer_name"),
       )
 
-      OutlinedTextField(
+      TextField3D(
         value = customerMobile,
         onValueChange = {
           customerMobile = it.filter { ch -> ch.isDigit() }.take(10)
@@ -873,28 +846,27 @@ private fun OrderEditorDialog(
           }
           mobileError = false
         },
-        label = { Text("Mobile Number (10 digits) *") },
+        label = "Mobile Number (10 digits) *",
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
         isError = mobileError,
         supportingText =
           if (mobileError) ({ Text("Enter valid 10-digit mobile number") }) else null,
-        singleLine = true,
         modifier = Modifier.fillMaxWidth().testTag("order_customer_mobile"),
       )
 
-      HorizontalDivider()
+      HorizontalDivider(color = palette.glossBorderBottom.copy(alpha = 0.35f))
 
       Text(
         text = "Select Products (${selectedItems.size} selected)",
         style = MaterialTheme.typography.titleSmall,
-        fontWeight = FontWeight.Bold,
+        fontWeight = FontWeight.ExtraBold,
+        color = palette.textPrimary,
       )
-      OutlinedTextField(
+      TextField3D(
         value = productSearch,
         onValueChange = { productSearch = it },
-        placeholder = { Text("Search products...") },
-        leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
-        singleLine = true,
+        placeholder = "Search products...",
+        leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null, tint = SaffronOrange) },
         modifier = Modifier.fillMaxWidth().testTag("order_product_search"),
       )
 
@@ -905,89 +877,91 @@ private fun OrderEditorDialog(
           fontSize = 12.sp,
         )
       } else {
-        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
           filteredProducts.take(12).forEach { prod ->
             val existingIdx = selectedItems.indexOfFirst { it.productId == prod.id }
             val currentQty = if (existingIdx >= 0) selectedItems[existingIdx].quantity else 0.0
-            Surface(
-              shape = RoundedCornerShape(10.dp),
-              color = MaterialTheme.colorScheme.background,
-              border = if (currentQty > 0.0) BorderStroke(1.dp, SaffronOrange) else null,
+            Card3D(
+              cornerRadius = 16.dp,
+              shadowDepth = 3.dp,
+              accentBorderColor = if (currentQty > 0.0) SaffronOrange else null,
               modifier = Modifier.fillMaxWidth(),
+              contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
             ) {
               Row(
-                modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
               ) {
                 Column(modifier = Modifier.weight(1f)) {
-                  Text(prod.name, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                  Text(prod.name, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = palette.textPrimary)
                   Text(
                     "${CurrencyUtils.formatPaise(prod.sellingPricePaise, currencySymbol)} • Stock: ${CurrencyUtils.formatQty(prod.stockQty)} ${prod.unit}",
                     fontSize = 11.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = palette.textSecondary,
                   )
                 }
                 Spacer(Modifier.width(8.dp))
                 if (currentQty > 0.0) {
-                  Row(verticalAlignment = Alignment.CenterVertically) {
-                    Surface(
-                      shape = RoundedCornerShape(8.dp),
-                      color = SaffronOrangeSoft,
+                  Row(
+                    modifier = Modifier.inset3D(cornerRadius = 10.dp).padding(2.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                  ) {
+                    Box(
+                      contentAlignment = Alignment.Center,
                       modifier =
-                        Modifier.size(30.dp).clickable {
-                          if (currentQty <= 1.0) selectedItems.removeAt(existingIdx)
-                          else selectedItems[existingIdx] = selectedItems[existingIdx].copy(quantity = currentQty - 1.0)
-                        },
+                        Modifier.size(28.dp)
+                          .raised3D(cornerRadius = 8.dp, shadowDepth = 2.dp)
+                          .clickable {
+                            if (currentQty <= 1.0) selectedItems.removeAt(existingIdx)
+                            else selectedItems[existingIdx] = selectedItems[existingIdx].copy(quantity = currentQty - 1.0)
+                          },
                     ) {
-                      Box(contentAlignment = Alignment.Center) {
-                        Icon(Icons.Filled.Remove, contentDescription = "Decrease", tint = SaffronOrange, modifier = Modifier.size(16.dp))
-                      }
+                      Icon(Icons.Filled.Remove, contentDescription = "Decrease", tint = SaffronOrange, modifier = Modifier.size(16.dp))
                     }
                     Text(
                       text = CurrencyUtils.formatQty(currentQty),
-                      fontWeight = FontWeight.Bold,
+                      fontWeight = FontWeight.ExtraBold,
                       fontSize = 13.sp,
+                      color = SaffronOrange,
                       modifier = Modifier.padding(horizontal = 8.dp),
                     )
-                    Surface(
-                      shape = RoundedCornerShape(8.dp),
-                      color = SaffronOrange,
+                    Box(
+                      contentAlignment = Alignment.Center,
                       modifier =
-                        Modifier.size(30.dp).clickable {
-                          selectedItems[existingIdx] = selectedItems[existingIdx].copy(quantity = currentQty + 1.0)
-                          itemsError = false
-                        },
+                        Modifier.size(28.dp)
+                          .raised3D(cornerRadius = 8.dp, tone = ClayTones.Orange, shadowDepth = 2.dp)
+                          .clickable {
+                            selectedItems[existingIdx] = selectedItems[existingIdx].copy(quantity = currentQty + 1.0)
+                            itemsError = false
+                          },
                     ) {
-                      Box(contentAlignment = Alignment.Center) {
-                        Icon(Icons.Filled.Add, contentDescription = "Increase", tint = Color.White, modifier = Modifier.size(16.dp))
-                      }
+                      Icon(Icons.Filled.Add, contentDescription = "Increase", tint = Color.White, modifier = Modifier.size(16.dp))
                     }
                   }
                 } else {
-                  Surface(
-                    shape = RoundedCornerShape(8.dp),
-                    color = SaffronOrange,
+                  Box(
                     modifier =
-                      Modifier.clickable {
-                        selectedItems.add(
-                          CartLineInput(
-                            productId = prod.id,
-                            name = prod.name,
-                            unit = prod.unit,
-                            quantity = 1.0,
-                            unitPricePaise = prod.sellingPricePaise,
-                            gstPercent = prod.gstPercent,
+                      Modifier.raised3D(cornerRadius = 10.dp, tone = ClayTones.Orange, shadowDepth = 2.dp)
+                        .clickable {
+                          selectedItems.add(
+                            CartLineInput(
+                              productId = prod.id,
+                              name = prod.name,
+                              unit = prod.unit,
+                              quantity = 1.0,
+                              unitPricePaise = prod.sellingPricePaise,
+                              gstPercent = prod.gstPercent,
+                            )
                           )
-                        )
-                        itemsError = false
-                      },
+                          itemsError = false
+                        }
+                        .padding(horizontal = 10.dp, vertical = 6.dp),
                   ) {
                     Text(
                       "+ Add",
                       color = Color.White,
                       fontSize = 12.sp,
-                      fontWeight = FontWeight.Bold,
-                      modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                      fontWeight = FontWeight.ExtraBold,
                     )
                   }
                 }
@@ -998,8 +972,8 @@ private fun OrderEditorDialog(
       }
 
       if (selectedItems.isNotEmpty()) {
-        HorizontalDivider()
-        Text("Selected Quantities", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+        HorizontalDivider(color = palette.glossBorderBottom.copy(alpha = 0.35f))
+        Text("Selected Quantities", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = palette.textPrimary)
         selectedItems.forEachIndexed { idx, line ->
           var qtyStr by remember(idx, line.productId, line.name) {
             mutableStateOf(CurrencyUtils.formatQty(line.quantity))
@@ -1015,14 +989,14 @@ private fun OrderEditorDialog(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
           ) {
             Column(modifier = Modifier.weight(1f)) {
-              Text(line.name, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+              Text(line.name, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = palette.textPrimary)
               Text(
                 "${CurrencyUtils.formatPaise(line.unitPricePaise, currencySymbol)} / ${line.unit}",
                 fontSize = 11.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = palette.textSecondary,
               )
             }
-            OutlinedTextField(
+            TextField3D(
               value = qtyStr,
               onValueChange = { raw ->
                 qtyStr = raw
@@ -1031,59 +1005,63 @@ private fun OrderEditorDialog(
                   selectedItems[idx] = selectedItems[idx].copy(quantity = parsed)
                 }
               },
-              label = { Text("Qty") },
+              label = "Qty",
               keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-              singleLine = true,
               modifier = Modifier.width(86.dp),
             )
-            IconButton(
-              onClick = { if (idx < selectedItems.size) selectedItems.removeAt(idx) },
-              modifier = Modifier.size(32.dp),
+            Box(
+              contentAlignment = Alignment.Center,
+              modifier =
+                Modifier.size(34.dp)
+                  .clip(RoundedCornerShape(10.dp))
+                  .clickable { if (idx < selectedItems.size) selectedItems.removeAt(idx) },
             ) {
-              Icon(Icons.Filled.DeleteOutline, contentDescription = "Remove", tint = AlertRed, modifier = Modifier.size(18.dp))
+              Icon3D(Icons.Filled.DeleteOutline, contentDescription = "Remove", tone = ClayTones.Red, size = 18.dp)
             }
           }
         }
-        Surface(
-          shape = RoundedCornerShape(10.dp),
-          color = SaffronOrangeSoft,
+        Card3D(
+          cornerRadius = 16.dp,
+          tone = ClayTones.Orange,
+          shadowDepth = 3.dp,
           modifier = Modifier.fillMaxWidth(),
+          contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp),
         ) {
           Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+            modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
           ) {
-            Text("Estimated Total", fontWeight = FontWeight.Bold, color = SaffronOrangeDark)
+            Text("Estimated Total", fontWeight = FontWeight.Bold, color = Color.White)
             Text(
               CurrencyUtils.formatPaise(calc.grandTotalPaise, currencySymbol),
               fontWeight = FontWeight.ExtraBold,
-              color = SaffronOrangeDark,
+              color = Color.White,
             )
           }
         }
       }
 
       if (itemsError) {
-        Text("Please select at least 1 product", color = AlertRed, fontSize = 12.sp)
+        Text("Please select at least 1 product", color = AlertRed, fontSize = 12.sp, fontWeight = FontWeight.Bold)
       }
 
-      OutlinedTextField(
+      TextField3D(
         value = notes,
         onValueChange = { notes = it },
-        label = { Text("Order Notes (Optional)") },
-        singleLine = true,
+        label = "Order Notes (Optional)",
         modifier = Modifier.fillMaxWidth(),
       )
     },
     bottomButtons = {
-      TextButton(
+      Button3D(
         onClick = onDismiss,
-        modifier = Modifier.heightIn(min = 48.dp),
+        isPrimary = false,
+        cornerRadius = 16.dp,
       ) {
-        Text("Cancel")
+        Text("Cancel", fontWeight = FontWeight.SemiBold)
       }
-      Spacer(Modifier.width(8.dp))
-      Button(
+      Spacer(Modifier.width(10.dp))
+      Button3D(
         onClick = {
           val trimmedName = customerName.trim()
           val digits = customerMobile.filter { it.isDigit() }
@@ -1104,14 +1082,13 @@ private fun OrderEditorDialog(
             onSave(selectedCustomer, trimmedName, digits, selectedItems.toList(), notes.trim())
           }
         },
-        shape = RoundedCornerShape(10.dp),
-        colors = ButtonDefaults.buttonColors(containerColor = SaffronOrange),
-        modifier = Modifier.heightIn(min = 48.dp).testTag("save_order_btn"),
+        cornerRadius = 16.dp,
+        modifier = Modifier.testTag("save_order_btn"),
       ) {
         Text(
           text = if (initialOrder == null) "Save Order" else "Update Order",
           color = Color.White,
-          fontWeight = FontWeight.Bold,
+          fontWeight = FontWeight.ExtraBold,
         )
       }
     },
@@ -1139,6 +1116,7 @@ private fun PendingOrderSettleDialog(
     notes: String,
   ) -> Unit,
 ) {
+  val palette = LocalVyaparClayPalette.current
   val lines = remember(order.id) {
     mutableStateListOf<EditableOrderLine>().apply {
       order.items.forEach {
@@ -1206,49 +1184,49 @@ private fun PendingOrderSettleDialog(
     title = "${order.orderNumber} • Finalize & Bill",
     onDismiss = onDismiss,
     scrollContent = {
-      Surface(
-        shape = RoundedCornerShape(12.dp),
-        color = SaffronOrangeSoft,
+      Card3D(
+        cornerRadius = 18.dp,
+        shadowDepth = 3.dp,
+        accentBorderColor = SaffronOrange.copy(alpha = 0.45f),
         modifier = Modifier.fillMaxWidth(),
+        contentPadding = PaddingValues(12.dp),
       ) {
         Row(
-          modifier = Modifier.fillMaxWidth().padding(10.dp),
+          modifier = Modifier.fillMaxWidth(),
           horizontalArrangement = Arrangement.SpaceBetween,
           verticalAlignment = Alignment.CenterVertically,
         ) {
           Column(modifier = Modifier.weight(1f)) {
-            Text(order.customerName, fontWeight = FontWeight.Bold, color = SaffronOrangeDark)
+            Text(order.customerName, fontWeight = FontWeight.ExtraBold, color = palette.textPrimary)
             if (order.customerMobile.isNotBlank()) {
-              Text(order.customerMobile, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+              Text(order.customerMobile, fontSize = 12.sp, color = palette.textSecondary)
             }
           }
-          OutlinedButton(
+          Button3D(
             onClick = onEditFullOrder,
-            shape = RoundedCornerShape(8.dp),
-            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-            modifier = Modifier.height(32.dp),
+            isPrimary = false,
+            cornerRadius = 12.dp,
+            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
           ) {
             Icon(Icons.Filled.Edit, contentDescription = null, modifier = Modifier.size(14.dp))
             Spacer(Modifier.width(4.dp))
-            Text("Edit Items", fontSize = 11.sp)
+            Text("Edit Items", fontSize = 11.sp, fontWeight = FontWeight.Bold)
           }
         }
       }
 
-      Text("Items (Edit Rate & Quantity)", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+      Text("Items (Edit Rate & Quantity)", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = palette.textPrimary)
       lines.forEachIndexed { idx, line ->
         val ratePaise = CurrencyUtils.rupeesToPaise(line.rateInput)
         val qtyVal = (line.qtyInput.toDoubleOrNull() ?: 0.0).coerceAtLeast(0.0)
         val estLinePaise = kotlin.math.round(ratePaise * qtyVal).toLong()
-        Surface(
-          shape = RoundedCornerShape(10.dp),
-          color = MaterialTheme.colorScheme.background,
+        Card3D(
+          cornerRadius = 16.dp,
+          shadowDepth = 3.dp,
           modifier = Modifier.fillMaxWidth(),
+          contentPadding = PaddingValues(10.dp),
         ) {
-          Column(
-            modifier = Modifier.padding(10.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
-          ) {
+          Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(
               modifier = Modifier.fillMaxWidth(),
               horizontalArrangement = Arrangement.SpaceBetween,
@@ -1256,40 +1234,39 @@ private fun PendingOrderSettleDialog(
             ) {
               Text(
                 text = line.name + if (line.gstPercent > 0) " (GST ${CurrencyUtils.formatQty(line.gstPercent)}%)" else "",
-                fontWeight = FontWeight.SemiBold,
+                fontWeight = FontWeight.Bold,
                 fontSize = 13.sp,
+                color = palette.textPrimary,
                 modifier = Modifier.weight(1f),
               )
               Text(
                 text = CurrencyUtils.formatPaise(estLinePaise, currencySymbol),
-                fontWeight = FontWeight.Bold,
-                color = SaffronOrangeDark,
+                fontWeight = FontWeight.ExtraBold,
+                color = SaffronOrange,
                 fontSize = 13.sp,
               )
               if (lines.size > 1) {
-                IconButton(
-                  onClick = { lines.removeAt(idx) },
-                  modifier = Modifier.size(28.dp),
+                Box(
+                  contentAlignment = Alignment.Center,
+                  modifier = Modifier.size(28.dp).clickable { lines.removeAt(idx) },
                 ) {
                   Icon(Icons.Filled.Close, contentDescription = "Remove item", tint = AlertRed, modifier = Modifier.size(16.dp))
                 }
               }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-              OutlinedTextField(
+              TextField3D(
                 value = line.rateInput,
                 onValueChange = { lines[idx] = line.copy(rateInput = it) },
-                label = { Text("Rate ($currencySymbol)") },
+                label = "Rate ($currencySymbol)",
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                singleLine = true,
                 modifier = Modifier.weight(1f),
               )
-              OutlinedTextField(
+              TextField3D(
                 value = line.qtyInput,
                 onValueChange = { lines[idx] = line.copy(qtyInput = it) },
-                label = { Text("Qty (${line.unit})") },
+                label = "Qty (${line.unit})",
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                singleLine = true,
                 modifier = Modifier.weight(0.85f),
               )
             }
@@ -1297,56 +1274,49 @@ private fun PendingOrderSettleDialog(
         }
       }
 
-      // Extra Discount
       Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp),
       ) {
-        OutlinedTextField(
+        TextField3D(
           value = discountInput,
           onValueChange = { discountInput = it },
-          label = { Text(if (isPctDiscount) "Extra Discount %" else "Extra Discount ($currencySymbol)") },
+          label = if (isPctDiscount) "Extra Discount %" else "Extra Discount ($currencySymbol)",
           keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-          singleLine = true,
           modifier = Modifier.weight(1f),
         )
-        FilterChip(
+        Chip3D(
           selected = !isPctDiscount,
           onClick = { isPctDiscount = false },
-          label = { Text(currencySymbol) },
-          colors = FilterChipDefaults.filterChipColors(selectedContainerColor = SaffronOrange, selectedLabelColor = Color.White),
+          label = currencySymbol,
         )
-        FilterChip(
+        Chip3D(
           selected = isPctDiscount,
           onClick = { isPctDiscount = true },
-          label = { Text("%") },
-          colors = FilterChipDefaults.filterChipColors(selectedContainerColor = SaffronOrange, selectedLabelColor = Color.White),
+          label = "%",
         )
       }
 
-      // GST Type quick toggle
       Row(
         modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
         horizontalArrangement = Arrangement.spacedBy(6.dp),
         verticalAlignment = Alignment.CenterVertically,
       ) {
-        Text("GST:", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+        Text("GST:", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = palette.textPrimary)
         listOf(
           GstTaxType.INTRA_STATE_CGST_SGST to "CGST+SGST",
           GstTaxType.INTER_STATE_IGST to "IGST",
           GstTaxType.NO_GST to "No GST",
         ).forEach { (tt, label) ->
-          FilterChip(
+          Chip3D(
             selected = taxType == tt,
             onClick = { taxType = tt },
-            label = { Text(label, fontSize = 11.sp) },
-            colors = FilterChipDefaults.filterChipColors(selectedContainerColor = SaffronOrange, selectedLabelColor = Color.White),
+            label = label,
           )
         }
       }
 
-      // Payment Mode
-      Text("Payment Mode", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+      Text("Payment Mode", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = palette.textPrimary)
       val modes =
         listOf(
           PaymentMethod.CASH to "Cash",
@@ -1359,68 +1329,59 @@ private fun PendingOrderSettleDialog(
         horizontalArrangement = Arrangement.spacedBy(6.dp),
       ) {
         modes.forEach { (method, label) ->
-          FilterChip(
+          Chip3D(
             selected = paymentMethod == method,
             onClick = {
               paymentMethod = method
               amountPaidManuallyEdited = false
             },
-            label = { Text(label, fontSize = 12.sp) },
-            colors =
-              FilterChipDefaults.filterChipColors(
-                selectedContainerColor =
-                  if (method == PaymentMethod.CREDIT) AlertRed else EmeraldGreen,
-                selectedLabelColor = Color.White,
-              ),
+            label = label,
+            selectedTone = if (method == PaymentMethod.CREDIT) ClayTones.Red else ClayTones.Green,
           )
         }
       }
 
-      OutlinedTextField(
+      TextField3D(
         value = effectivePaidInput,
         onValueChange = {
           customPaidInput = it
           amountPaidManuallyEdited = true
         },
-        label = { Text("Amount Paid ($currencySymbol)") },
+        label = "Amount Paid ($currencySymbol)",
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-        singleLine = true,
         modifier = Modifier.fillMaxWidth(),
       )
 
-      // Recalculated Totals Summary Card
-      Surface(
-        shape = RoundedCornerShape(12.dp),
-        color = MaterialTheme.colorScheme.background,
+      Card3D(
+        cornerRadius = 18.dp,
+        shadowDepth = 3.dp,
         modifier = Modifier.fillMaxWidth(),
+        contentPadding = PaddingValues(12.dp),
       ) {
-        Column(
-          modifier = Modifier.padding(12.dp),
-          verticalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
+        Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
           Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("Subtotal", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text(CurrencyUtils.formatPaise(calc.subtotalPaise, currencySymbol, true), fontSize = 12.sp)
+            Text("Subtotal", fontSize = 12.sp, color = palette.textSecondary)
+            Text(CurrencyUtils.formatPaise(calc.subtotalPaise, currencySymbol, true), fontSize = 12.sp, color = palette.textPrimary)
           }
           if (calc.discountPaise > 0) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-              Text("Discount", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-              Text("-${CurrencyUtils.formatPaise(calc.discountPaise, currencySymbol, true)}", fontSize = 12.sp)
+              Text("Discount", fontSize = 12.sp, color = palette.textSecondary)
+              Text("-${CurrencyUtils.formatPaise(calc.discountPaise, currencySymbol, true)}", fontSize = 12.sp, color = palette.textPrimary)
             }
           }
           if (calc.totalTaxPaise > 0) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-              Text("GST", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-              Text(CurrencyUtils.formatPaise(calc.totalTaxPaise, currencySymbol, true), fontSize = 12.sp)
+              Text("GST", fontSize = 12.sp, color = palette.textSecondary)
+              Text(CurrencyUtils.formatPaise(calc.totalTaxPaise, currencySymbol, true), fontSize = 12.sp, color = palette.textPrimary)
             }
           }
-          HorizontalDivider()
+          HorizontalDivider(color = palette.glossBorderBottom.copy(alpha = 0.35f))
           Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("Final Total", fontWeight = FontWeight.Bold)
+            Text("Final Total", fontWeight = FontWeight.ExtraBold, color = palette.textPrimary)
             Text(
               CurrencyUtils.formatPaise(calc.grandTotalPaise, currencySymbol, true),
               fontWeight = FontWeight.ExtraBold,
-              color = SaffronOrangeDark,
+              color = SaffronOrange,
             )
           }
           if (balanceDue > 0) {
@@ -1437,32 +1398,32 @@ private fun PendingOrderSettleDialog(
         }
       }
 
-      OutlinedTextField(
+      TextField3D(
         value = notes,
         onValueChange = { notes = it },
-        label = { Text("Bill Notes (Optional)") },
-        singleLine = true,
+        label = "Bill Notes (Optional)",
         modifier = Modifier.fillMaxWidth(),
       )
 
-      OutlinedButton(
+      Button3D(
         onClick = { showCancelConfirm = true },
-        shape = RoundedCornerShape(10.dp),
-        border = BorderStroke(1.dp, AlertRed),
-        modifier = Modifier.fillMaxWidth().height(42.dp),
+        isPrimary = false,
+        cornerRadius = 14.dp,
+        modifier = Modifier.fillMaxWidth(),
       ) {
-        Text("Cancel This Order", color = AlertRed, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+        Text("Cancel This Order", color = AlertRed, fontWeight = FontWeight.Bold, fontSize = 13.sp)
       }
     },
     bottomButtons = {
-      TextButton(
+      Button3D(
         onClick = onDismiss,
-        modifier = Modifier.heightIn(min = 48.dp),
+        isPrimary = false,
+        cornerRadius = 16.dp,
       ) {
-        Text("Close")
+        Text("Close", fontWeight = FontWeight.SemiBold)
       }
-      Spacer(Modifier.width(8.dp))
-      Button(
+      Spacer(Modifier.width(10.dp))
+      Button3D(
         onClick = {
           if (cartInputs.isNotEmpty()) {
             onConfirm(
@@ -1478,34 +1439,44 @@ private fun PendingOrderSettleDialog(
           }
         },
         enabled = cartInputs.isNotEmpty(),
-        shape = RoundedCornerShape(10.dp),
-        colors = ButtonDefaults.buttonColors(containerColor = EmeraldGreen),
-        modifier = Modifier.heightIn(min = 48.dp).testTag("confirm_order_bill_btn"),
+        tone = ClayTones.Green,
+        cornerRadius = 16.dp,
+        modifier = Modifier.testTag("confirm_order_bill_btn"),
       ) {
-        Text("Confirm", color = Color.White, fontWeight = FontWeight.Bold)
+        Text("Confirm", color = Color.White, fontWeight = FontWeight.ExtraBold)
       }
     },
   )
 
   if (showCancelConfirm) {
-    AlertDialog(
-      onDismissRequest = { showCancelConfirm = false },
-      properties = DialogProperties(decorFitsSystemWindows = false),
-      modifier = Modifier.statusBarsPadding().navigationBarsPadding().imePadding(),
-      title = { Text("Cancel ${order.orderNumber}?") },
-      text = { Text("This order will be marked Cancelled and kept in your Cancelled Orders history.") },
-      confirmButton = {
-        TextButton(
+    VyaparFormDialog(
+      title = "Cancel ${order.orderNumber}?",
+      onDismiss = { showCancelConfirm = false },
+      scrollContent = {
+        Text(
+          "This order will be marked Cancelled and kept in your Cancelled Orders history.",
+          color = palette.textSecondary,
+        )
+      },
+      bottomButtons = {
+        Button3D(
+          onClick = { showCancelConfirm = false },
+          isPrimary = false,
+          cornerRadius = 14.dp,
+        ) {
+          Text("Keep Pending", fontWeight = FontWeight.SemiBold)
+        }
+        Spacer(Modifier.width(10.dp))
+        Button3D(
           onClick = {
             showCancelConfirm = false
             onCancelOrder()
-          }
+          },
+          tone = ClayTones.Red,
+          cornerRadius = 14.dp,
         ) {
-          Text("Yes, Cancel Order", color = AlertRed, fontWeight = FontWeight.Bold)
+          Text("Yes, Cancel Order", color = Color.White, fontWeight = FontWeight.Bold)
         }
-      },
-      dismissButton = {
-        TextButton(onClick = { showCancelConfirm = false }) { Text("Keep Pending") }
       },
     )
   }

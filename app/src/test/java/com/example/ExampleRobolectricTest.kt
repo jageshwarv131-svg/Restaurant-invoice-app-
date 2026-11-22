@@ -16,6 +16,7 @@ import com.example.model.OrderStatus
 import com.example.model.PaperFormat
 import com.example.model.PaymentMethod
 import com.example.model.Product
+import com.example.model.ThemePreference
 import com.example.pdf.InvoicePdfGenerator
 import java.io.File
 import kotlinx.coroutines.test.runTest
@@ -378,5 +379,25 @@ class ExampleRobolectricTest {
     assertEquals(OrderStatus.COMPLETED, repoReloaded.orders.value.first { it.id == order1.id }.status)
     assertEquals(OrderStatus.CANCELLED, repoReloaded.orders.value.first { it.id == order2.id }.status)
     assertEquals(17.0, repoReloaded.products.value.first().stockQty, 0.01)
+  }
+
+  @Test
+  fun `theme preference System Light Dark persists across restart`() = runTest {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val storage = JsonStorageManager(context)
+    val repo1 = VyaparRepository(storage)
+    repo1.loadAll()
+
+    repo1.updateSettings(repo1.settings.value.copy(themePreference = ThemePreference.DARK, darkMode = true))
+    val repo2 = VyaparRepository(JsonStorageManager(context))
+    repo2.loadAll()
+    assertEquals(ThemePreference.DARK, repo2.settings.value.themePreference)
+    assertEquals(true, repo2.settings.value.darkMode)
+
+    repo2.updateSettings(repo2.settings.value.copy(themePreference = ThemePreference.LIGHT, darkMode = false))
+    val repo3 = VyaparRepository(JsonStorageManager(context))
+    repo3.loadAll()
+    assertEquals(ThemePreference.LIGHT, repo3.settings.value.themePreference)
+    assertEquals(false, repo3.settings.value.darkMode)
   }
 }

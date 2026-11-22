@@ -1,6 +1,5 @@
 package com.example.ui.screens
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -17,7 +16,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.ReceiptLong
@@ -35,7 +33,6 @@ import androidx.compose.material.icons.filled.TrendingUp
 import androidx.compose.material.icons.filled.WarningAmber
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -44,17 +41,19 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -64,8 +63,17 @@ import com.example.model.BusinessProfile
 import com.example.model.Invoice
 import com.example.model.Product
 import com.example.ui.DashboardMetrics
+import com.example.ui.components.Card3D
+import com.example.ui.components.Chip3D
+import com.example.ui.components.ClayBarChart
+import com.example.ui.components.ClayIconPad
+import com.example.ui.components.ClayTone
+import com.example.ui.components.ClayTones
 import com.example.ui.components.EmptyStatePanel
+import com.example.ui.components.Icon3D
 import com.example.ui.components.MetricGridCard
+import com.example.ui.components.inset3D
+import com.example.ui.components.raised3D
 import com.example.ui.theme.AlertRed
 import com.example.ui.theme.AlertRedSoft
 import com.example.ui.theme.AmberGold
@@ -74,6 +82,7 @@ import com.example.ui.theme.EmeraldGreen
 import com.example.ui.theme.EmeraldGreenSoft
 import com.example.ui.theme.InfoBlue
 import com.example.ui.theme.InfoBlueSoft
+import com.example.ui.theme.LocalVyaparClayPalette
 import com.example.ui.theme.PurpleAccent
 import com.example.ui.theme.PurpleAccentSoft
 import com.example.ui.theme.SaffronOrange
@@ -108,6 +117,7 @@ fun DashboardScreen(
   onOpenProducts: () -> Unit,
   onOpenOrders: () -> Unit,
 ) {
+  val palette = LocalVyaparClayPalette.current
   val sym = business.currencySymbol.ifBlank { "₹" }
   var chartRange by remember { mutableStateOf(ChartRange.SEVEN_DAYS) }
 
@@ -116,90 +126,103 @@ fun DashboardScreen(
   val topProducts = remember(invoices) { computeTopProducts(invoices) }
 
   LazyColumn(
-    modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background),
-    contentPadding = PaddingValues(16.dp),
+    modifier = Modifier.fillMaxSize().background(palette.background),
+    contentPadding = PaddingValues(start = 14.dp, end = 14.dp, top = 10.dp, bottom = 20.dp),
     verticalArrangement = Arrangement.spacedBy(14.dp),
   ) {
-    // 1. Hero Orange Today Sales Card (exact mockup style)
+    // 1. Hero Orange 3D Today Sales Card
     item {
-      Surface(
-        shape = RoundedCornerShape(20.dp),
-        color = SaffronOrange,
-        shadowElevation = 4.dp,
+      Card3D(
+        cornerRadius = 26.dp,
+        tone = ClayTones.HeroOrange,
+        shadowDepth = 6.dp,
         modifier = Modifier.fillMaxWidth().testTag("dashboard_hero_card"),
+        contentPadding = PaddingValues(18.dp),
       ) {
-        Box(
-          modifier =
-            Modifier.fillMaxWidth()
-              .background(
-                Brush.linearGradient(
-                  listOf(SaffronOrange, SaffronOrangeDark)
-                )
-              )
-              .padding(18.dp)
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          verticalAlignment = Alignment.CenterVertically,
         ) {
-          Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-          ) {
-            Column(modifier = Modifier.weight(1.3f)) {
+          Column(modifier = Modifier.weight(1.2f)) {
+            Text(
+              text = "Today Sales",
+              color = Color.White.copy(alpha = 0.94f),
+              fontSize = 14.sp,
+              fontWeight = FontWeight.SemiBold,
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+              text = CurrencyUtils.formatPaise(metrics.todaySalesPaise, sym),
+              style =
+                TextStyle(
+                  color = Color.White,
+                  fontSize = 32.sp,
+                  fontWeight = FontWeight.ExtraBold,
+                  shadow =
+                    Shadow(
+                      color = Color(0x66000000),
+                      offset = Offset(0f, 5f),
+                      blurRadius = 10f,
+                    ),
+                ),
+              maxLines = 1,
+              overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(Modifier.height(8.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+              Row(
+                modifier =
+                  Modifier.raised3D(
+                    cornerRadius = 50.dp,
+                    tone = ClayTone(Color(0xFFFFB25E), Color(0xFFF68A29), Color(0xFFE06410)),
+                    shadowDepth = 2.dp,
+                  )
+                    .padding(horizontal = 9.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+              ) {
+                Icon(
+                  imageVector = Icons.Filled.TrendingUp,
+                  contentDescription = null,
+                  tint = Color.White,
+                  modifier = Modifier.size(13.dp),
+                )
+                Spacer(Modifier.width(4.dp))
+                Text(
+                  text =
+                    if (metrics.salesGrowthPercent >= 0) "+${metrics.salesGrowthPercent}%"
+                    else "${metrics.salesGrowthPercent}%",
+                  color = Color.White,
+                  fontSize = 11.sp,
+                  fontWeight = FontWeight.ExtraBold,
+                )
+              }
+              Spacer(Modifier.width(8.dp))
               Text(
-                text = "Today Sales",
-                color = Color.White.copy(alpha = 0.9f),
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Medium,
-              )
-              Spacer(Modifier.height(4.dp))
-              Text(
-                text = CurrencyUtils.formatPaise(metrics.todaySalesPaise, sym),
-                color = Color.White,
-                fontSize = 30.sp,
-                fontWeight = FontWeight.ExtraBold,
+                text = "Month: ${CurrencyUtils.formatPaise(metrics.monthlySalesPaise, sym)}",
+                color = Color.White.copy(alpha = 0.95f),
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
               )
-              Spacer(Modifier.height(6.dp))
-              Row(verticalAlignment = Alignment.CenterVertically) {
-                Surface(
-                  shape = RoundedCornerShape(50),
-                  color = Color.White.copy(alpha = 0.2f),
-                ) {
-                  Row(
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                  ) {
-                    Icon(
-                      imageVector = Icons.Filled.TrendingUp,
-                      contentDescription = null,
-                      tint = Color.White,
-                      modifier = Modifier.size(13.dp),
-                    )
-                    Spacer(Modifier.width(4.dp))
-                    Text(
-                      text =
-                        if (metrics.salesGrowthPercent >= 0) "+${metrics.salesGrowthPercent}%"
-                        else "${metrics.salesGrowthPercent}%",
-                      color = Color.White,
-                      fontSize = 11.sp,
-                      fontWeight = FontWeight.Bold,
-                    )
-                  }
-                }
-                Spacer(Modifier.width(8.dp))
-                Text(
-                  text = "Month: ${CurrencyUtils.formatPaise(metrics.monthlySalesPaise, sym)}",
-                  color = Color.White.copy(alpha = 0.92f),
-                  fontSize = 12.sp,
-                  fontWeight = FontWeight.Medium,
-                )
-              }
             }
+          }
 
-            // Sparkline + Mini Bars matching hero right side
-            MiniHeroChart(
-              values = chartPoints.map { it.second.toFloat() },
-              modifier = Modifier.weight(0.9f).height(66.dp),
-            )
+          Spacer(Modifier.width(12.dp))
+
+          // Embossed right-side 3D orange clay panel with white rising arrow
+          Box(
+            modifier =
+              Modifier.weight(0.95f)
+                .height(86.dp)
+                .raised3D(
+                  cornerRadius = 20.dp,
+                  tone = ClayTone(Color(0xFFFF963E), Color(0xFFF06D16), Color(0xFFD9530A)),
+                  shadowDepth = 4.dp,
+                )
+                .padding(10.dp)
+          ) {
+            HeroTrendGraphic(modifier = Modifier.fillMaxSize())
           }
         }
       }
@@ -218,6 +241,7 @@ fun DashboardScreen(
             icon = Icons.Filled.Receipt,
             iconTint = InfoBlue,
             iconBg = InfoBlueSoft,
+            tone = ClayTones.Blue,
             modifier = Modifier.weight(1f),
             onClick = onOpenInvoices,
           )
@@ -227,6 +251,7 @@ fun DashboardScreen(
             icon = Icons.Filled.Group,
             iconTint = EmeraldGreen,
             iconBg = EmeraldGreenSoft,
+            tone = ClayTones.Green,
             modifier = Modifier.weight(1f),
             onClick = onOpenCustomers,
           )
@@ -241,6 +266,7 @@ fun DashboardScreen(
             icon = Icons.Filled.Inventory2,
             iconTint = AmberGold,
             iconBg = AmberGoldSoft,
+            tone = ClayTones.Amber,
             modifier = Modifier.weight(1f),
             onClick = onOpenProducts,
           )
@@ -250,6 +276,7 @@ fun DashboardScreen(
             icon = Icons.Filled.AccountBalanceWallet,
             iconTint = PurpleAccent,
             iconBg = PurpleAccentSoft,
+            tone = ClayTones.Purple,
             modifier = Modifier.weight(1f),
             onClick = onOpenExpenses,
           )
@@ -264,11 +291,12 @@ fun DashboardScreen(
         horizontalArrangement = Arrangement.spacedBy(10.dp),
       ) {
         MetricGridCard(
-          title = "Outstanding Dues",
+          title = "Outstanding Due",
           value = CurrencyUtils.formatPaise(metrics.outstandingDuesPaise, sym),
           icon = Icons.Filled.Payments,
           iconTint = AlertRed,
           iconBg = AlertRedSoft,
+          tone = ClayTones.Red,
           modifier = Modifier.weight(1f),
           onClick = onOpenCustomers,
         )
@@ -276,57 +304,43 @@ fun DashboardScreen(
           title = "Low Stock Alerts",
           value = "${metrics.lowStockCount} items",
           icon = Icons.Filled.WarningAmber,
-          iconTint = SaffronOrangeDark,
+          iconTint = AmberGold,
           iconBg = AmberGoldSoft,
+          tone = ClayTones.Amber,
           modifier = Modifier.weight(1f),
           onClick = onOpenInventory,
         )
       }
     }
 
-    // 3b. Pending Orders Card (tap to open Pending Orders)
+    // 3b. Pending Orders 3D Card
     item {
-      Surface(
-        shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.surface,
-        tonalElevation = 1.dp,
-        shadowElevation = 2.dp,
-        border =
-          BorderStroke(
-            1.dp,
-            if (metrics.pendingOrdersCount > 0) SaffronOrange.copy(alpha = 0.45f)
-            else MaterialTheme.colorScheme.outline.copy(alpha = 0.35f),
-          ),
-        modifier =
-          Modifier.fillMaxWidth()
-            .clickable(onClick = onOpenOrders)
-            .testTag("dashboard_pending_orders_card"),
+      Card3D(
+        cornerRadius = 22.dp,
+        shadowDepth = 4.dp,
+        accentBorderColor =
+          if (metrics.pendingOrdersCount > 0) SaffronOrange.copy(alpha = 0.5f) else null,
+        onClick = onOpenOrders,
+        modifier = Modifier.fillMaxWidth().testTag("dashboard_pending_orders_card"),
+        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 14.dp),
       ) {
         Row(
-          modifier = Modifier.fillMaxWidth().padding(14.dp),
+          modifier = Modifier.fillMaxWidth(),
           verticalAlignment = Alignment.CenterVertically,
         ) {
-          Box(
-            modifier =
-              Modifier.size(44.dp)
-                .clip(RoundedCornerShape(12.dp))
-                .background(AmberGoldSoft),
-            contentAlignment = Alignment.Center,
-          ) {
-            Icon(
-              imageVector = Icons.Filled.LocalShipping,
-              contentDescription = "Pending Orders",
-              tint = SaffronOrangeDark,
-              modifier = Modifier.size(23.dp),
-            )
-          }
+          Icon3D(
+            imageVector = Icons.Filled.LocalShipping,
+            contentDescription = "Pending Orders",
+            tone = ClayTones.Orange,
+            size = 34.dp,
+          )
           Spacer(Modifier.width(12.dp))
           Column(modifier = Modifier.weight(1f)) {
             Text(
               text = "Pending Orders",
               style = MaterialTheme.typography.titleSmall,
-              fontWeight = FontWeight.Bold,
-              color = MaterialTheme.colorScheme.onSurface,
+              fontWeight = FontWeight.ExtraBold,
+              color = palette.textPrimary,
             )
             Text(
               text =
@@ -334,162 +348,266 @@ fun DashboardScreen(
                   "${metrics.pendingOrdersCount} order(s) waiting for final bill & payment"
                 else "Take order first, finalize rate & bill later",
               style = MaterialTheme.typography.bodySmall,
-              color = MaterialTheme.colorScheme.onSurfaceVariant,
+              color = palette.textSecondary,
               maxLines = 1,
               overflow = TextOverflow.Ellipsis,
             )
           }
           Spacer(Modifier.width(8.dp))
-          Surface(
-            shape = RoundedCornerShape(50),
-            color =
-              if (metrics.pendingOrdersCount > 0) SaffronOrange
-              else MaterialTheme.colorScheme.surfaceVariant,
+          Row(
+            modifier =
+              Modifier.then(
+                if (metrics.pendingOrdersCount > 0)
+                  Modifier.raised3D(cornerRadius = 50.dp, tone = ClayTones.Orange, shadowDepth = 3.dp)
+                else Modifier.inset3D(cornerRadius = 50.dp)
+              )
+                .padding(horizontal = 11.dp, vertical = 5.dp),
+            verticalAlignment = Alignment.CenterVertically,
           ) {
             Text(
               text = metrics.pendingOrdersCount.toString(),
-              color =
-                if (metrics.pendingOrdersCount > 0) Color.White
-                else MaterialTheme.colorScheme.onSurfaceVariant,
+              color = if (metrics.pendingOrdersCount > 0) Color.White else palette.textPrimary,
               fontWeight = FontWeight.ExtraBold,
               fontSize = 13.sp,
-              modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+            )
+            Spacer(Modifier.width(3.dp))
+            Icon(
+              imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+              contentDescription = "Open Pending Orders",
+              tint = if (metrics.pendingOrdersCount > 0) Color.White else palette.textSecondary,
+              modifier = Modifier.size(16.dp),
             )
           }
-          Spacer(Modifier.width(4.dp))
-          Icon(
-            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-            contentDescription = "Open Pending Orders",
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        }
+      }
+    }
+
+    // 4. Sales Overview 3D Bar Chart Card
+    item {
+      Card3D(
+        cornerRadius = 24.dp,
+        shadowDepth = 5.dp,
+        modifier = Modifier.fillMaxWidth(),
+        contentPadding = PaddingValues(16.dp),
+      ) {
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+          Text(
+            text = "Sales Overview",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.ExtraBold,
+            color = palette.textPrimary,
+          )
+          Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            ChartRange.entries.forEach { range ->
+              Chip3D(
+                selected = chartRange == range,
+                onClick = { chartRange = range },
+                label = range.label,
+              )
+            }
+          }
+        }
+
+        Spacer(Modifier.height(14.dp))
+
+        if (chartPoints.all { it.second == 0L }) {
+          Box(
+            modifier = Modifier.fillMaxWidth().height(120.dp),
+            contentAlignment = Alignment.Center,
+          ) {
+            Text(
+              text = "Create your first bill to see live sales trends",
+              style = MaterialTheme.typography.bodyMedium,
+              color = palette.textSecondary,
+            )
+          }
+        } else {
+          ClayBarChart(
+            points = chartPoints,
+            tone = ClayTones.HeroOrange,
+            labelColor = palette.textSecondary,
+            modifier = Modifier.fillMaxWidth().height(145.dp),
           )
         }
       }
     }
 
-    // 4. Sales Overview Bar Chart Card (matching mockup)
+    // 5. Recent Bills 3D Card
     item {
-      Surface(
-        shape = RoundedCornerShape(18.dp),
-        color = MaterialTheme.colorScheme.surface,
-        tonalElevation = 1.dp,
-        shadowElevation = 2.dp,
+      Card3D(
+        cornerRadius = 24.dp,
+        shadowDepth = 5.dp,
         modifier = Modifier.fillMaxWidth(),
+        contentPadding = PaddingValues(16.dp),
       ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-          Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween,
-          ) {
-            Text(
-              text = "Sales Overview",
-              style = MaterialTheme.typography.titleMedium,
-              fontWeight = FontWeight.Bold,
-            )
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-              ChartRange.entries.forEach { range ->
-                val selected = chartRange == range
-                Surface(
-                  shape = RoundedCornerShape(50),
-                  color =
-                    if (selected) SaffronOrange
-                    else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
-                  modifier = Modifier.clickable { chartRange = range },
-                ) {
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.SpaceBetween,
+          verticalAlignment = Alignment.CenterVertically,
+        ) {
+          Text(
+            "Recent Bills",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.ExtraBold,
+            color = palette.textPrimary,
+          )
+          Text(
+            text = "View All",
+            color = SaffronOrange,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.clickable(onClick = onOpenInvoices),
+          )
+        }
+        Spacer(Modifier.height(10.dp))
+        if (invoices.isEmpty()) {
+          EmptyStatePanel(
+            icon = Icons.AutoMirrored.Filled.ReceiptLong,
+            title = "No Bills Yet",
+            subtitle = "Tap New Bill to create your first GST invoice.",
+            actionLabel = "Create First Bill",
+            onAction = onNewBill,
+          )
+        } else {
+          invoices.take(4).forEachIndexed { index, inv ->
+            if (index > 0) Spacer(Modifier.height(8.dp))
+            Card3D(
+              cornerRadius = 18.dp,
+              shadowDepth = 3.dp,
+              onClick = { onOpenInvoicePreview(inv) },
+              modifier = Modifier.fillMaxWidth(),
+              contentPadding = PaddingValues(12.dp),
+            ) {
+              Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+              ) {
+                Column(modifier = Modifier.weight(1f)) {
                   Text(
-                    text = range.label,
-                    color =
-                      if (selected) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                    text = "${inv.invoiceNumber} • ${inv.customerName}",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = palette.textPrimary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                   )
+                  Spacer(Modifier.height(2.dp))
+                  Text(
+                    text = "${CurrencyUtils.formatDateTime(inv.timestamp)} • ${inv.paymentMethod.label}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = palette.textSecondary,
+                  )
+                }
+                Column(horizontalAlignment = Alignment.End) {
+                  Text(
+                    text = CurrencyUtils.formatPaise(inv.grandTotalPaise, sym),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = SaffronOrange,
+                  )
+                  if (inv.balanceDuePaise > 0) {
+                    Text(
+                      text = "Due ${CurrencyUtils.formatPaise(inv.balanceDuePaise, sym)}",
+                      style = MaterialTheme.typography.labelSmall,
+                      fontWeight = FontWeight.Bold,
+                      color = AlertRed,
+                    )
+                  } else {
+                    Text(
+                      text = "Paid",
+                      style = MaterialTheme.typography.labelSmall,
+                      fontWeight = FontWeight.Bold,
+                      color = EmeraldGreen,
+                    )
+                  }
                 }
               }
             }
           }
-
-          Spacer(Modifier.height(14.dp))
-
-          if (chartPoints.all { it.second == 0L }) {
-            Box(
-              modifier = Modifier.fillMaxWidth().height(120.dp),
-              contentAlignment = Alignment.Center,
-            ) {
-              Text(
-                text = "Create your first bill to see live sales trends",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-              )
-            }
-          } else {
-            SalesBarChart(
-              points = chartPoints,
-              barColor = SaffronOrange,
-              labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
-              modifier = Modifier.fillMaxWidth().height(140.dp),
-            )
-          }
         }
       }
     }
 
-    // 5. Quick Actions Grid (New Bill, Add Product, Add Customer, Reports, Expenses, Invoices)
+    // 6. Quick Actions 3D Grid Card
     item {
-      Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text(
-          text = "Quick Actions",
-          style = MaterialTheme.typography.titleMedium,
-          fontWeight = FontWeight.Bold,
-        )
+      Card3D(
+        cornerRadius = 24.dp,
+        shadowDepth = 5.dp,
+        modifier = Modifier.fillMaxWidth(),
+        contentPadding = PaddingValues(16.dp),
+      ) {
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.SpaceBetween,
+          verticalAlignment = Alignment.CenterVertically,
+        ) {
+          Text(
+            text = "Quick Actions",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.ExtraBold,
+            color = palette.textPrimary,
+          )
+          Text(
+            text = "POS & Masters",
+            color = SaffronOrange,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Bold,
+          )
+        }
+        Spacer(Modifier.height(12.dp))
         Row(
           modifier = Modifier.fillMaxWidth(),
           horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-          QuickActionCard(
+          QuickActionCard3D(
             label = "New Bill",
             icon = Icons.Filled.AddShoppingCart,
-            tint = InfoBlue,
+            tone = ClayTones.Blue,
             onClick = onNewBill,
             modifier = Modifier.weight(1f).testTag("qa_new_bill"),
           )
-          QuickActionCard(
+          QuickActionCard3D(
             label = "Add Product",
             icon = Icons.Filled.AddBox,
-            tint = SaffronOrange,
+            tone = ClayTones.Orange,
             onClick = onAddProduct,
             modifier = Modifier.weight(1f).testTag("qa_add_product"),
           )
-          QuickActionCard(
+          QuickActionCard3D(
             label = "Add Customer",
             icon = Icons.Filled.PersonAdd,
-            tint = EmeraldGreen,
+            tone = ClayTones.Green,
             onClick = onAddCustomer,
             modifier = Modifier.weight(1f).testTag("qa_add_customer"),
           )
         }
+        Spacer(Modifier.height(10.dp))
         Row(
           modifier = Modifier.fillMaxWidth(),
           horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-          QuickActionCard(
+          QuickActionCard3D(
             label = "Reports",
             icon = Icons.Filled.Assessment,
-            tint = PurpleAccent,
+            tone = ClayTones.Purple,
             onClick = onOpenReports,
             modifier = Modifier.weight(1f),
           )
-          QuickActionCard(
+          QuickActionCard3D(
             label = "Expenses",
             icon = Icons.Filled.AccountBalanceWallet,
-            tint = AlertRed,
+            tone = ClayTones.Red,
             onClick = onOpenExpenses,
             modifier = Modifier.weight(1f),
           )
-          QuickActionCard(
+          QuickActionCard3D(
             label = "Invoices",
             icon = Icons.AutoMirrored.Filled.ReceiptLong,
-            tint = AmberGold,
+            tone = ClayTones.Amber,
             onClick = onOpenInvoices,
             modifier = Modifier.weight(1f),
           )
@@ -497,133 +615,65 @@ fun DashboardScreen(
       }
     }
 
-    // 6. Recent Bills
-    item {
-      Surface(
-        shape = RoundedCornerShape(18.dp),
-        color = MaterialTheme.colorScheme.surface,
-        tonalElevation = 1.dp,
-        shadowElevation = 2.dp,
-        modifier = Modifier.fillMaxWidth(),
-      ) {
-        Column(modifier = Modifier.padding(16.dp)) {
+    // 7. Top Selling Products 3D Card
+    if (topProducts.isNotEmpty()) {
+      item {
+        Card3D(
+          cornerRadius = 24.dp,
+          shadowDepth = 5.dp,
+          modifier = Modifier.fillMaxWidth(),
+          contentPadding = PaddingValues(16.dp),
+        ) {
           Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
           ) {
             Text(
-              "Recent Bills",
+              "Top Selling Products",
               style = MaterialTheme.typography.titleMedium,
-              fontWeight = FontWeight.Bold,
+              fontWeight = FontWeight.ExtraBold,
+              color = palette.textPrimary,
             )
             Text(
               text = "View All",
               color = SaffronOrange,
               fontSize = 13.sp,
-              fontWeight = FontWeight.SemiBold,
-              modifier = Modifier.clickable(onClick = onOpenInvoices),
+              fontWeight = FontWeight.Bold,
+              modifier = Modifier.clickable(onClick = onOpenProducts),
             )
           }
           Spacer(Modifier.height(10.dp))
-          if (invoices.isEmpty()) {
-            EmptyStatePanel(
-              icon = Icons.AutoMirrored.Filled.ReceiptLong,
-              title = "No Bills Yet",
-              subtitle = "Tap New Bill to create your first GST invoice.",
-              actionLabel = "Create First Bill",
-              onAction = onNewBill,
-            )
-          } else {
-            invoices.take(4).forEachIndexed { index, inv ->
-              if (index > 0) Spacer(Modifier.height(8.dp))
-              Surface(
-                shape = RoundedCornerShape(12.dp),
-                color = MaterialTheme.colorScheme.background,
-                modifier = Modifier.fillMaxWidth().clickable { onOpenInvoicePreview(inv) },
-              ) {
-                Row(
-                  modifier = Modifier.padding(12.dp),
-                  verticalAlignment = Alignment.CenterVertically,
-                ) {
-                  Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                      text = "${inv.invoiceNumber} • ${inv.customerName}",
-                      style = MaterialTheme.typography.titleSmall,
-                      maxLines = 1,
-                      overflow = TextOverflow.Ellipsis,
-                    )
-                    Text(
-                      text = "${CurrencyUtils.formatDateTime(inv.timestamp)} • ${inv.paymentMethod.label}",
-                      style = MaterialTheme.typography.bodySmall,
-                      color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                  }
-                  Column(horizontalAlignment = Alignment.End) {
-                    Text(
-                      text = CurrencyUtils.formatPaise(inv.grandTotalPaise, sym),
-                      style = MaterialTheme.typography.titleSmall,
-                      fontWeight = FontWeight.Bold,
-                      color = SaffronOrangeDark,
-                    )
-                    if (inv.balanceDuePaise > 0) {
-                      Text(
-                        text = "Due ${CurrencyUtils.formatPaise(inv.balanceDuePaise, sym)}",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = AlertRed,
-                      )
-                    } else {
-                      Text(
-                        text = "Paid",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = EmeraldGreen,
-                      )
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-
-    // 7. Top Products
-    if (topProducts.isNotEmpty()) {
-      item {
-        Surface(
-          shape = RoundedCornerShape(18.dp),
-          color = MaterialTheme.colorScheme.surface,
-          tonalElevation = 1.dp,
-          shadowElevation = 2.dp,
-          modifier = Modifier.fillMaxWidth(),
-        ) {
-          Column(modifier = Modifier.padding(16.dp)) {
-            Text(
-              "Top Selling Products",
-              style = MaterialTheme.typography.titleMedium,
-              fontWeight = FontWeight.Bold,
-            )
-            Spacer(Modifier.height(10.dp))
-            topProducts.take(4).forEachIndexed { i, itemStat ->
-              if (i > 0) Spacer(Modifier.height(8.dp))
+          topProducts.take(4).forEachIndexed { i, itemStat ->
+            if (i > 0) Spacer(Modifier.height(8.dp))
+            Card3D(
+              cornerRadius = 18.dp,
+              shadowDepth = 3.dp,
+              modifier = Modifier.fillMaxWidth(),
+              contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
+            ) {
               Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
               ) {
                 Column(modifier = Modifier.weight(1f)) {
-                  Text(itemStat.name, style = MaterialTheme.typography.titleSmall)
+                  Text(
+                    itemStat.name,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = palette.textPrimary,
+                  )
                   Text(
                     "Qty sold: ${CurrencyUtils.formatQty(itemStat.qtySold)}",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = palette.textSecondary,
                   )
                 }
                 Text(
                   CurrencyUtils.formatPaise(itemStat.revenuePaise, sym),
                   style = MaterialTheme.typography.titleSmall,
-                  fontWeight = FontWeight.Bold,
+                  fontWeight = FontWeight.ExtraBold,
                   color = EmeraldGreen,
                 )
               }
@@ -636,40 +686,41 @@ fun DashboardScreen(
 }
 
 @Composable
-private fun QuickActionCard(
+private fun QuickActionCard3D(
   label: String,
   icon: ImageVector,
-  tint: Color,
+  tone: ClayTone,
   onClick: () -> Unit,
   modifier: Modifier = Modifier,
 ) {
-  Surface(
-    shape = RoundedCornerShape(14.dp),
-    color = MaterialTheme.colorScheme.surface,
-    tonalElevation = 1.dp,
-    shadowElevation = 2.dp,
-    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)),
-    modifier = modifier.clickable(onClick = onClick),
+  val palette = LocalVyaparClayPalette.current
+  Card3D(
+    cornerRadius = 18.dp,
+    shadowDepth = 3.dp,
+    onClick = onClick,
+    modifier = modifier,
+    contentPadding = PaddingValues(vertical = 10.dp, horizontal = 6.dp),
   ) {
     Column(
-      modifier = Modifier.padding(vertical = 14.dp, horizontal = 6.dp),
+      modifier = Modifier.fillMaxWidth(),
       horizontalAlignment = Alignment.CenterHorizontally,
       verticalArrangement = Arrangement.Center,
     ) {
-      Box(
-        modifier =
-          Modifier.size(38.dp)
-            .clip(RoundedCornerShape(10.dp))
-            .background(tint.copy(alpha = 0.13f)),
-        contentAlignment = Alignment.Center,
-      ) {
-        Icon(imageVector = icon, contentDescription = label, tint = tint, modifier = Modifier.size(21.dp))
-      }
-      Spacer(Modifier.height(8.dp))
+      ClayIconPad(
+        imageVector = icon,
+        contentDescription = label,
+        tone = tone,
+        padSize = 46.dp,
+        iconSize = 24.dp,
+        cornerRadius = 15.dp,
+        useRecessedPad = true,
+      )
+      Spacer(Modifier.height(7.dp))
       Text(
         text = label,
         style = MaterialTheme.typography.labelMedium,
-        fontWeight = FontWeight.SemiBold,
+        fontWeight = FontWeight.Bold,
+        color = palette.textPrimary,
         textAlign = TextAlign.Center,
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
@@ -679,75 +730,68 @@ private fun QuickActionCard(
 }
 
 @Composable
-private fun MiniHeroChart(values: List<Float>, modifier: Modifier = Modifier) {
+private fun HeroTrendGraphic(modifier: Modifier = Modifier) {
   Canvas(modifier = modifier) {
-    val pts = if (values.isEmpty() || values.all { it == 0f }) listOf(2f, 4f, 3f, 5f, 4f, 6f, 7f) else values
-    val maxVal = (pts.maxOrNull() ?: 1f).coerceAtLeast(1f)
-    val count = pts.size.coerceAtLeast(2)
-    val barW = (size.width / count) * 0.52f
-    val step = size.width / count
+    val w = size.width
+    val h = size.height
 
-    pts.forEachIndexed { idx, v ->
-      val h = (v / maxVal) * (size.height * 0.72f)
-      val x = idx * step + (step - barW) / 2f
-      drawRoundRect(
-        color = Color.White.copy(alpha = 0.28f),
-        topLeft = Offset(x, size.height - h),
-        size = Size(barW, h),
-        cornerRadius = CornerRadius(4f, 4f),
-      )
-    }
+    // Subtle glowing orange pill bar on bottom right (like screenshot)
+    drawRoundRect(
+      color = Color.Black.copy(alpha = 0.20f),
+      topLeft = Offset(w * 0.78f + 2.dp.toPx(), h * 0.56f + 3.dp.toPx()),
+      size = Size(w * 0.16f, h * 0.36f),
+      cornerRadius = CornerRadius(6.dp.toPx(), 6.dp.toPx()),
+    )
+    drawRoundRect(
+      brush = Brush.verticalGradient(listOf(Color(0xFFFFB868), Color(0xFFF46B17))),
+      topLeft = Offset(w * 0.78f, h * 0.56f),
+      size = Size(w * 0.16f, h * 0.36f),
+      cornerRadius = CornerRadius(6.dp.toPx(), 6.dp.toPx()),
+    )
 
-    val path = Path()
-    pts.forEachIndexed { idx, v ->
-      val x = idx * step + step / 2f
-      val y = size.height - ((v / maxVal) * (size.height * 0.85f)) - 4f
-      if (idx == 0) path.moveTo(x, y) else path.lineTo(x, y)
-    }
-    drawPath(path = path, color = Color.White, style = Stroke(width = 4f, cap = StrokeCap.Round))
-  }
-}
-
-@Composable
-fun SalesBarChart(
-  points: List<Pair<String, Long>>,
-  barColor: Color,
-  labelColor: Color,
-  modifier: Modifier = Modifier,
-) {
-  val maxVal = (points.maxOfOrNull { it.second } ?: 1L).coerceAtLeast(1L)
-  Column(modifier = modifier) {
-    Canvas(modifier = Modifier.weight(1f).fillMaxWidth()) {
-      val count = points.size.coerceAtLeast(1)
-      val slotW = size.width / count
-      val barW = (slotW * 0.56f).coerceIn(10f, 44f)
-
-      points.forEachIndexed { idx, (_, value) ->
-        val ratio = value.toFloat() / maxVal.toFloat()
-        val barH = (ratio * (size.height - 12f)).coerceAtLeast(if (value > 0) 8f else 2f)
-        val x = idx * slotW + (slotW - barW) / 2f
-        val y = size.height - barH
-        drawRoundRect(
-          color = if (value > 0) barColor else barColor.copy(alpha = 0.16f),
-          topLeft = Offset(x, y),
-          size = Size(barW, barH),
-          cornerRadius = CornerRadius(10f, 10f),
-        )
+    // 3D white rising zig-zag trend arrow with soft drop shadow
+    val linePath =
+      Path().apply {
+        moveTo(w * 0.08f, h * 0.78f)
+        lineTo(w * 0.28f, h * 0.50f)
+        lineTo(w * 0.48f, h * 0.64f)
+        lineTo(w * 0.86f, h * 0.16f)
       }
-    }
-    Spacer(Modifier.height(6.dp))
-    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-      points.forEach { (label, _) ->
-        Text(
-          text = label,
-          color = labelColor,
-          fontSize = 10.sp,
-          textAlign = TextAlign.Center,
-          maxLines = 1,
-          modifier = Modifier.weight(1f),
-        )
+    val shadowPath =
+      Path().apply {
+        moveTo(w * 0.08f, h * 0.83f)
+        lineTo(w * 0.28f, h * 0.55f)
+        lineTo(w * 0.48f, h * 0.69f)
+        lineTo(w * 0.86f, h * 0.21f)
       }
-    }
+    drawPath(
+      path = shadowPath,
+      color = Color.Black.copy(alpha = 0.28f),
+      style = Stroke(width = 6.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round),
+    )
+    drawPath(
+      path = linePath,
+      color = Color.White,
+      style = Stroke(width = 5.2.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round),
+    )
+
+    // Crisp arrow head
+    val arrowHeadShadow =
+      Path().apply {
+        moveTo(w * 0.68f, h * 0.19f)
+        lineTo(w * 0.90f, h * 0.15f)
+        lineTo(w * 0.86f, h * 0.39f)
+        close()
+      }
+    drawPath(path = arrowHeadShadow, color = Color.Black.copy(alpha = 0.22f))
+    val arrowHead =
+      Path().apply {
+        moveTo(w * 0.67f, h * 0.15f)
+        lineTo(w * 0.90f, h * 0.10f)
+        lineTo(w * 0.86f, h * 0.35f)
+        close()
+      }
+    drawPath(path = arrowHead, color = Color.White)
   }
 }
 

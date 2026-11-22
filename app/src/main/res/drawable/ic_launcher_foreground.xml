@@ -1,8 +1,129 @@
 <?xml version="1.0" encoding="utf-8"?>
-<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-    <item
-        android:width="66dp"
-        android:height="66dp"
-        android:drawable="@drawable/img_vyapar_logo"
-        android:gravity="center" />
-</layer-list>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Deep bottom-right 3D drop shadow inside 66dp safe zone (24..84) -->
+    <path
+        android:fillColor="#66000000"
+        android:pathData="M40,29 L72,29 A15,15 0 0,1 87,44 L87,74 A15,15 0 0,1 72,89 L40,89 A15,15 0 0,1 25,74 L25,44 A15,15 0 0,1 40,29 Z" />
+
+    <!-- Extruded lower dark-orange clay lip -->
+    <path
+        android:fillColor="#FFB84106"
+        android:pathData="M38,26 L70,26 A15,15 0 0,1 85,41 L85,71 A15,15 0 0,1 70,86 L38,86 A15,15 0 0,1 23,71 L23,41 A15,15 0 0,1 38,26 Z" />
+
+    <!-- Main 3D glossy orange clay rounded-square badge (center 54,54, 60x60dp) -->
+    <path android:pathData="M38,24 L70,24 A15,15 0 0,1 85,39 L85,69 A15,15 0 0,1 70,84 L38,84 A15,15 0 0,1 23,69 L23,39 A15,15 0 0,1 38,24 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:endX="78"
+                android:endY="84"
+                android:startX="28"
+                android:startY="24"
+                android:type="linear">
+                <item android:color="#FFFFAE52" android:offset="0" />
+                <item android:color="#FFF46B17" android:offset="0.52" />
+                <item android:color="#FFE04F07" android:offset="1" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Top-left glossy specular highlight rim -->
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M38,24.8 L70,24.8 A14.2,14.2 0 0,1 84.2,39 L84.2,69 A14.2,14.2 0 0,1 70,83.2 L38,83.2 A14.2,14.2 0 0,1 23.8,69 L23.8,39 A14.2,14.2 0 0,1 38,24.8 Z"
+        android:strokeWidth="1.6">
+        <aapt:attr name="android:strokeColor">
+            <gradient
+                android:endX="78"
+                android:endY="78"
+                android:startX="28"
+                android:startY="28"
+                android:type="linear">
+                <item android:color="#99FFFFFF" android:offset="0" />
+                <item android:color="#00FFFFFF" android:offset="0.55" />
+                <item android:color="#40000000" android:offset="1" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Soft top gloss dome -->
+    <path android:pathData="M38,26 L70,26 A13,13 0 0,1 82,36 C72,44 36,44 26,36 A13,13 0 0,1 38,26 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:endX="54"
+                android:endY="44"
+                android:startX="54"
+                android:startY="26"
+                android:type="linear">
+                <item android:color="#4DFFFFFF" android:offset="0" />
+                <item android:color="#00FFFFFF" android:offset="1" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- 3D Receipt shadow -->
+    <path
+        android:fillColor="#38000000"
+        android:pathData="M36.5,35.5 L63.5,35.5 A4,4 0 0,1 67.5,39.5 L67.5,73.5 L62.5,70.5 L57.5,73.5 L52.5,70.5 L47.5,73.5 L42.5,70.5 L37.5,73.5 L32.5,70.5 L32.5,39.5 A4,4 0 0,1 36.5,35.5 Z" />
+
+    <!-- Crisp 3D White Receipt Card -->
+    <path android:pathData="M35,33.5 L62,33.5 A4,4 0 0,1 66,37.5 L66,71.5 L61,68.5 L56,71.5 L51,68.5 L46,71.5 L41,68.5 L36,71.5 L31,68.5 L31,37.5 A4,4 0 0,1 35,33.5 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:endX="48"
+                android:endY="72"
+                android:startX="48"
+                android:startY="33"
+                android:type="linear">
+                <item android:color="#FFFFFFFF" android:offset="0" />
+                <item android:color="#FFF3ECE4" android:offset="1" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Receipt horizontal invoice lines -->
+    <path
+        android:fillColor="#FFD4D8E0"
+        android:pathData="M36,41.5 L53,41.5 A1.5,1.5 0 0,1 53,44.5 L36,44.5 A1.5,1.5 0 0,1 36,41.5 Z" />
+    <path
+        android:fillColor="#FFE2E5EB"
+        android:pathData="M36,48 L48,48 A1.5,1.5 0 0,1 48,51 L36,51 A1.5,1.5 0 0,1 36,48 Z" />
+
+    <!-- Rising 3D Growth Arrow shadow -->
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M37,62.5 L46.5,53.5 L53.5,58 L71.5,42"
+        android:strokeColor="#48000000"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:strokeWidth="5.2" />
+
+    <!-- Rising 3D Growth Arrow stroke + head (Orange on white + white tip extending out) -->
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M36,60.5 L45.5,51.5 L52.5,56 L71,39.5"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:strokeWidth="5">
+        <aapt:attr name="android:strokeColor">
+            <gradient
+                android:endX="72"
+                android:endY="39"
+                android:startX="36"
+                android:startY="61"
+                android:type="linear">
+                <item android:color="#FFE8590C" android:offset="0" />
+                <item android:color="#FF16A34A" android:offset="1" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <path
+        android:fillColor="#FF16A34A"
+        android:pathData="M62.5,38 L74.5,36.5 L72.5,48.5 Z" />
+
+</vector>
