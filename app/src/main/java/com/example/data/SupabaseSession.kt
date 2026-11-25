@@ -11,7 +11,15 @@ import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
-class SupabaseSession(context: Context) {
+interface SessionStorage {
+    fun saveSession(accessToken: String, refreshToken: String, userId: String? = null)
+    fun getAccessToken(): String?
+    fun getRefreshToken(): String?
+    fun getUserId(): String?
+    fun clearSession()
+}
+
+class SupabaseSession(context: Context) : SessionStorage {
 
     private val prefs = context.applicationContext
         .getSharedPreferences("supabase_session", Context.MODE_PRIVATE)
@@ -24,7 +32,7 @@ class SupabaseSession(context: Context) {
         private const val USER_ID = "user_id"
     }
 
-    fun saveSession(accessToken: String, refreshToken: String, userId: String? = null) {
+    override fun saveSession(accessToken: String, refreshToken: String, userId: String?) {
         val editor = prefs.edit()
             .putString(ACCESS_TOKEN, encrypt(accessToken))
             .putString(REFRESH_TOKEN, encrypt(refreshToken))
@@ -36,15 +44,15 @@ class SupabaseSession(context: Context) {
         editor.apply()
     }
 
-    fun getAccessToken(): String? {
+    override fun getAccessToken(): String? {
         return readEncrypted(ACCESS_TOKEN)
     }
 
-    fun getRefreshToken(): String? {
+    override fun getRefreshToken(): String? {
         return readEncrypted(REFRESH_TOKEN)
     }
 
-    fun getUserId(): String? {
+    override fun getUserId(): String? {
         return readEncrypted(USER_ID)
     }
 
@@ -58,7 +66,7 @@ class SupabaseSession(context: Context) {
         }
     }
 
-    fun clearSession() {
+    override fun clearSession() {
         prefs.edit().clear().apply()
     }
 

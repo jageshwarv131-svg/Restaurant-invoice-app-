@@ -208,6 +208,7 @@ fun VyaparBillingApp(vm: VyaparViewModel = viewModel()) {
   val toastMessage by vm.toastMessage.collectAsStateWithLifecycle()
 val isAuthLoading by vm.isAuthLoading.collectAsStateWithLifecycle()
 val isAuthenticated by vm.isAuthenticated.collectAsStateWithLifecycle()
+val authUserId by vm.authUserId.collectAsStateWithLifecycle()
 val authMessage by vm.authMessage.collectAsStateWithLifecycle()
 val licenseState by vm.licenseState.collectAsStateWithLifecycle()
 val hasActiveLicense = licenseState.hasActiveLicense
@@ -791,8 +792,8 @@ val paymentErrorMessage by vm.paymentErrorMessage.collectAsStateWithLifecycle()
                   SubScreen.LIFETIME_LICENSE -> {
                     LifetimeLicensePaymentScreen(
                       isAuthenticated = isAuthenticated,
-                      hasActiveLicense = hasActiveLicense,
-                      isLicenseChecking = licenseState.isChecking,
+                      authUserId = authUserId,
+                      licenseState = licenseState,
                       isSubmitting = isPaymentSubmitting,
                       isStatusLoading = isPaymentStatusLoading,
                       paymentRequests = paymentRequests,

@@ -47,6 +47,7 @@ import com.example.data.LicenseAccessState
 import com.example.data.LicenseStatus
 import com.example.data.PaymentRequestRecord
 import com.example.data.PaymentRequestStatus
+import com.example.data.SessionStorage
 import com.example.data.SupabaseAuth
 import com.example.data.SupabaseLicenseService
 import com.example.data.SupabasePaymentService
@@ -101,7 +102,7 @@ class VyaparViewModel(application: Application) : AndroidViewModel(application) 
 internal var supabaseAuth = SupabaseAuth()
 internal var supabasePaymentService = SupabasePaymentService()
 internal var supabaseLicenseService = SupabaseLicenseService()
-private val supabaseSession = SupabaseSession(application.applicationContext)
+internal var supabaseSession: SessionStorage = SupabaseSession(application.applicationContext)
 
 private val _isAuthLoading = MutableStateFlow(false)
 val isAuthLoading: StateFlow<Boolean> = _isAuthLoading.asStateFlow()
@@ -447,6 +448,11 @@ val paymentErrorMessage: StateFlow<String?> = _paymentErrorMessage.asStateFlow()
           withContext(Dispatchers.IO) {
             supabaseSession.saveSession(result.accessToken, result.refreshToken, result.userId)
           }
+          _paymentRequests.value = emptyList()
+          _paymentSubmissionMessage.value = null
+          _paymentErrorMessage.value = null
+          _licenseState.value =
+            LicenseAccessState(hasActiveLicense = false, status = LicenseStatus.CHECKING, isChecking = true)
           _authUserId.value = result.userId
           _isAuthenticated.value = true
           if (!result.userId.isNullOrBlank()) {
@@ -494,6 +500,11 @@ val paymentErrorMessage: StateFlow<String?> = _paymentErrorMessage.asStateFlow()
           withContext(Dispatchers.IO) {
             supabaseSession.saveSession(result.accessToken, result.refreshToken, result.userId)
           }
+          _paymentRequests.value = emptyList()
+          _paymentSubmissionMessage.value = null
+          _paymentErrorMessage.value = null
+          _licenseState.value =
+            LicenseAccessState(hasActiveLicense = false, status = LicenseStatus.CHECKING, isChecking = true)
           _authUserId.value = result.userId
           _isAuthenticated.value = true
           if (!result.userId.isNullOrBlank()) {
@@ -563,6 +574,7 @@ val paymentErrorMessage: StateFlow<String?> = _paymentErrorMessage.asStateFlow()
   }
 
   fun refreshLicenseStatus() {
+    if (_isPaymentStatusLoading.value || _licenseState.value.isChecking || _isAuthLoading.value) return
     viewModelScope.launch {
       val (accessToken, refreshToken, savedUserId) =
         withContext(Dispatchers.IO) {
@@ -577,7 +589,9 @@ val paymentErrorMessage: StateFlow<String?> = _paymentErrorMessage.asStateFlow()
         if (!refreshToken.isNullOrBlank()) {
           restoreSupabaseSession()
         } else {
+          _authUserId.value = null
           _isAuthenticated.value = false
+          _paymentRequests.value = emptyList()
           _licenseState.value =
             LicenseAccessState(hasActiveLicense = false, status = LicenseStatus.UNAUTHENTICATED)
         }
@@ -589,12 +603,17 @@ val paymentErrorMessage: StateFlow<String?> = _paymentErrorMessage.asStateFlow()
         userId = userId,
         preserveExistingAccessWhileChecking = false,
       )
-      fetchPaymentRequestsInternal(accessToken, refreshToken, userId)
+      val latestAccess = withContext(Dispatchers.IO) { supabaseSession.getAccessToken() } ?: accessToken
+      val latestRefresh = withContext(Dispatchers.IO) { supabaseSession.getRefreshToken() } ?: refreshToken
+      val latestUserId = (_authUserId.value ?: userId)
+      if (_isAuthenticated.value && latestUserId.isNotBlank()) {
+        fetchPaymentRequestsInternal(latestAccess, latestRefresh, latestUserId)
+      }
     }
   }
 
   fun fetchPaymentRequests() {
-    if (_isPaymentStatusLoading.value) return
+    if (_isPaymentStatusLoading.value || _licenseState.value.isChecking || _isAuthLoading.value) return
     viewModelScope.launch {
       val (accessToken, refreshToken, savedUserId) =
         withContext(Dispatchers.IO) {
@@ -609,22 +628,27 @@ val paymentErrorMessage: StateFlow<String?> = _paymentErrorMessage.asStateFlow()
         if (!refreshToken.isNullOrBlank()) {
           restoreSupabaseSession()
         } else {
+          _authUserId.value = null
+          _isAuthenticated.value = false
+          _paymentRequests.value = emptyList()
           _licenseState.value =
             LicenseAccessState(hasActiveLicense = false, status = LicenseStatus.UNAUTHENTICATED)
         }
         return@launch
       }
 
-      fetchPaymentRequestsInternal(accessToken, refreshToken, userId)
+      verifyLicenseInternal(
+        accessToken = accessToken,
+        refreshToken = refreshToken,
+        userId = userId,
+        preserveExistingAccessWhileChecking = false,
+      )
       val latestAccess = withContext(Dispatchers.IO) { supabaseSession.getAccessToken() } ?: accessToken
       val latestRefresh = withContext(Dispatchers.IO) { supabaseSession.getRefreshToken() } ?: refreshToken
       val latestUserId = (_authUserId.value ?: userId)
-      verifyLicenseInternal(
-        accessToken = latestAccess,
-        refreshToken = latestRefresh,
-        userId = latestUserId,
-        preserveExistingAccessWhileChecking = _licenseState.value.hasActiveLicense,
-      )
+      if (_isAuthenticated.value && latestUserId.isNotBlank()) {
+        fetchPaymentRequestsInternal(latestAccess, latestRefresh, latestUserId)
+      }
     }
   }
 
@@ -691,6 +715,10 @@ val paymentErrorMessage: StateFlow<String?> = _paymentErrorMessage.asStateFlow()
     }
 
     if (result.isUnauthorized) {
+      withContext(Dispatchers.IO) { supabaseSession.clearSession() }
+      _authUserId.value = null
+      _isAuthenticated.value = false
+      _paymentRequests.value = emptyList()
       _licenseState.value =
         LicenseAccessState(
           hasActiveLicense = false,
@@ -701,12 +729,16 @@ val paymentErrorMessage: StateFlow<String?> = _paymentErrorMessage.asStateFlow()
       return
     }
 
+    val verifiedUserId = result.userId ?: userId
     _licenseState.value =
       LicenseAccessState(
-        hasActiveLicense = result.hasActiveLicense && result.status == LicenseStatus.ACTIVE,
+        hasActiveLicense = result.hasActiveLicense && result.status == LicenseStatus.ACTIVE && verifiedUserId == (_authUserId.value ?: userId),
         status = result.status,
         isChecking = false,
         licenseId = result.licenseId,
+        userId = verifiedUserId,
+        activatedAt = result.activatedAt,
+        utr = result.utr,
         message = result.message,
         isNetworkError = result.isNetworkError,
       )

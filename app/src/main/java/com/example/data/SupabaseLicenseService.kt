@@ -19,6 +19,9 @@ data class LicenseVerificationResult(
     val hasActiveLicense: Boolean,
     val status: LicenseStatus,
     val licenseId: String? = null,
+    val userId: String? = null,
+    val activatedAt: String? = null,
+    val utr: String? = null,
     val message: String? = null,
     val isUnauthorized: Boolean = false,
     val isNetworkError: Boolean = false,
@@ -29,6 +32,9 @@ data class LicenseAccessState(
     val status: LicenseStatus = LicenseStatus.UNAUTHENTICATED,
     val isChecking: Boolean = false,
     val licenseId: String? = null,
+    val userId: String? = null,
+    val activatedAt: String? = null,
+    val utr: String? = null,
     val message: String? = null,
     val isNetworkError: Boolean = false,
 )
@@ -58,17 +64,27 @@ class SupabaseLicenseService(
                     message = "No active lifetime license found.",
                 )
             }
+            val cleanExpectedUserId = expectedUserId.trim()
             val array = JSONArray(trimmed)
             for (i in 0 until array.length()) {
                 val obj = array.optJSONObject(i) ?: continue
                 val rowStatus = obj.optString("status").trim()
                 val rowUserId = obj.optString("user_id").trim()
-                val matchesUser = rowUserId.isBlank() || rowUserId == expectedUserId.trim()
+                val matchesUser = rowUserId.isNotBlank() && rowUserId == cleanExpectedUserId
                 if (rowStatus.equals("active", ignoreCase = true) && matchesUser) {
+                    val activatedAt = obj.optString("activated_at")
+                        .trim()
+                        .takeIf { it.isNotBlank() && !it.equals("null", ignoreCase = true) }
+                    val utr = obj.optString("utr")
+                        .trim()
+                        .takeIf { it.isNotBlank() && !it.equals("null", ignoreCase = true) }
                     return LicenseVerificationResult(
                         hasActiveLicense = true,
                         status = LicenseStatus.ACTIVE,
-                        licenseId = obj.optString("id").takeIf { it.isNotBlank() },
+                        licenseId = obj.optString("id").takeIf { it.isNotBlank() && !it.equals("null", ignoreCase = true) },
+                        userId = rowUserId,
+                        activatedAt = activatedAt,
+                        utr = utr,
                         message = "Lifetime License Active",
                     )
                 }
@@ -85,7 +101,9 @@ class SupabaseLicenseService(
         accessToken: String,
         userId: String,
     ): LicenseVerificationResult {
-        if (accessToken.isBlank() || userId.isBlank()) {
+        val cleanToken = accessToken.trim()
+        val cleanUserId = userId.trim()
+        if (cleanToken.isBlank() || cleanUserId.isBlank()) {
             return LicenseVerificationResult(
                 hasActiveLicense = false,
                 status = LicenseStatus.UNAUTHENTICATED,
@@ -94,7 +112,17 @@ class SupabaseLicenseService(
             )
         }
 
-        val url = buildLicensesCheckUrl(userId = userId)
+        val jwtSub = SupabasePaymentService.extractJwtClaims(cleanToken)?.userId
+        if (!jwtSub.isNullOrBlank() && jwtSub != cleanUserId) {
+            return LicenseVerificationResult(
+                hasActiveLicense = false,
+                status = LicenseStatus.UNAUTHENTICATED,
+                message = "Session user mismatch. Please login again to verify license.",
+                isUnauthorized = true,
+            )
+        }
+
+        val url = buildLicensesCheckUrl(userId = cleanUserId)
         return try {
             val request = Request.Builder()
                 .url(url)
