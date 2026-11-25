@@ -131,8 +131,15 @@ import com.example.ui.theme.VyaparBillingTheme
 import com.example.util.CurrencyUtils
 import java.io.File
 import kotlinx.coroutines.launch
+import androidx.compose.runtime.DisposableEffect
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.example.data.LicenseAccessState
+import com.example.data.LicenseStatus
 import com.example.data.PaymentRequestRecord
 import com.example.data.PaymentRequestStatus
+import com.example.ui.screens.LicenseLockedScreen
 import com.example.ui.screens.LifetimeLicensePaymentScreen
 import com.example.ui.theme.AmberGold
 import com.example.ui.theme.EmeraldGreen
@@ -202,11 +209,29 @@ fun VyaparBillingApp(vm: VyaparViewModel = viewModel()) {
 val isAuthLoading by vm.isAuthLoading.collectAsStateWithLifecycle()
 val isAuthenticated by vm.isAuthenticated.collectAsStateWithLifecycle()
 val authMessage by vm.authMessage.collectAsStateWithLifecycle()
+val licenseState by vm.licenseState.collectAsStateWithLifecycle()
+val hasActiveLicense = licenseState.hasActiveLicense
 val isPaymentSubmitting by vm.isPaymentSubmitting.collectAsStateWithLifecycle()
 val isPaymentStatusLoading by vm.isPaymentStatusLoading.collectAsStateWithLifecycle()
 val paymentRequests by vm.paymentRequests.collectAsStateWithLifecycle()
 val paymentSubmissionMessage by vm.paymentSubmissionMessage.collectAsStateWithLifecycle()
 val paymentErrorMessage by vm.paymentErrorMessage.collectAsStateWithLifecycle()
+
+  val lifecycleOwner = LocalLifecycleOwner.current
+  var hasObservedInitialResume by remember { mutableStateOf(false) }
+  DisposableEffect(lifecycleOwner) {
+    val observer = LifecycleEventObserver { _, event ->
+      if (event == Lifecycle.Event.ON_RESUME) {
+        if (hasObservedInitialResume) {
+          vm.onAppResumed()
+        } else {
+          hasObservedInitialResume = true
+        }
+      }
+    }
+    lifecycleOwner.lifecycle.addObserver(observer)
+    onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+  }
   
   var showSplash by remember { mutableStateOf(true) }
   var currentTab by remember { mutableStateOf(BottomTab.HOME) }
@@ -362,6 +387,15 @@ val paymentErrorMessage by vm.paymentErrorMessage.collectAsStateWithLifecycle()
                           fontWeight = FontWeight.SemiBold,
                           color = Color.White.copy(alpha = 0.88f),
                         )
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                          text =
+                            if (hasActiveLicense) "Lifetime License Active"
+                            else "License Required • ₹499",
+                          style = MaterialTheme.typography.labelSmall,
+                          fontWeight = FontWeight.ExtraBold,
+                          color = Color.White,
+                        )
                       }
 
                       Spacer(Modifier.height(14.dp))
@@ -482,186 +516,243 @@ val paymentErrorMessage by vm.paymentErrorMessage.collectAsStateWithLifecycle()
                   }
                 },
               ) {
+                @Composable
+                fun LockedGate(featureTitle: String, showBackButton: Boolean) {
+                  LicenseLockedScreen(
+                    featureTitle = featureTitle,
+                    isAuthenticated = isAuthenticated,
+                    licenseState = licenseState,
+                    paymentRequests = paymentRequests,
+                    showBackButton = showBackButton,
+                    onBack = { popSubScreen() },
+                    onActivateLicense = {
+                      vm.clearPaymentFeedback()
+                      pushSubScreen(SubScreen.LIFETIME_LICENSE)
+                    },
+                    onOpenAccount = {
+                      vm.clearAuthMessage()
+                      pushSubScreen(SubScreen.ACCOUNT)
+                    },
+                    onRefreshLicense = { vm.refreshLicenseStatus() },
+                  )
+                }
+
                 when (activeSubScreen) {
                   SubScreen.POS_BILLING -> {
-                    PosBillingScreen(
-                      cart = cart,
-                      products = products,
-                      customers = customers,
-                      currencySymbol = sym,
-                      isShopOpen = isShopOpen,
-                      onToggleShopStatus = { vm.toggleShopOpen() },
-                      onBack = { popSubScreen() },
-                      onAddProduct = { vm.addProductToCart(it) },
-                      onDecrementProduct = { vm.decrementProductInCart(it.id) },
-                      onAddCustomItem = { name, qty, pricePaise, gst, unit ->
-                        vm.addCustomItemToCart(name, qty, pricePaise, gst, unit)
-                      },
-                      onUpdateQty = { idx, delta -> vm.updateCartItemQty(idx, delta) },
-                      onRemoveItem = { idx -> vm.removeCartItem(idx) },
-                      onSelectCustomer = { vm.setCartCustomer(it) },
-                      onUpdateCustomerDetails = { name, mobile, address, gstin, saveToDir ->
-                        vm.updateCartCustomerDetails(name, mobile, address, gstin, saveToDir)
-                      },
-                      onQuickCreateCustomer = { name, mobile, onCreated ->
-                        vm.upsertCustomer(
-                          com.example.model.Customer(id = "", name = name, mobile = mobile),
-                          onSaved = onCreated,
-                        )
-                      },
-                      onSetDiscount = { input, isPct -> vm.setCartDiscount(input, isPct) },
-                      onSetTaxConfig = { tt, tm -> vm.setCartTaxConfig(tt, tm) },
-                      onSetPaymentMethod = { vm.setCartPaymentMethod(it) },
-                      onSetAmountPaid = { vm.setCartAmountPaid(it) },
-                      onClearCart = { vm.clearCart() },
-                      onGenerateInvoice = {
-                        vm.completeSaleAndOpenInvoice {
-                          popSubScreen()
-                          pushSubScreen(SubScreen.INVOICE_PREVIEW)
-                        }
-                      },
-                    )
+                    if (!hasActiveLicense) {
+                      LockedGate("POS Billing", showBackButton = true)
+                    } else {
+                      PosBillingScreen(
+                        cart = cart,
+                        products = products,
+                        customers = customers,
+                        currencySymbol = sym,
+                        isShopOpen = isShopOpen,
+                        onToggleShopStatus = { vm.toggleShopOpen() },
+                        onBack = { popSubScreen() },
+                        onAddProduct = { vm.addProductToCart(it) },
+                        onDecrementProduct = { vm.decrementProductInCart(it.id) },
+                        onAddCustomItem = { name, qty, pricePaise, gst, unit ->
+                          vm.addCustomItemToCart(name, qty, pricePaise, gst, unit)
+                        },
+                        onUpdateQty = { idx, delta -> vm.updateCartItemQty(idx, delta) },
+                        onRemoveItem = { idx -> vm.removeCartItem(idx) },
+                        onSelectCustomer = { vm.setCartCustomer(it) },
+                        onUpdateCustomerDetails = { name, mobile, address, gstin, saveToDir ->
+                          vm.updateCartCustomerDetails(name, mobile, address, gstin, saveToDir)
+                        },
+                        onQuickCreateCustomer = { name, mobile, onCreated ->
+                          vm.upsertCustomer(
+                            com.example.model.Customer(id = "", name = name, mobile = mobile),
+                            onSaved = onCreated,
+                          )
+                        },
+                        onSetDiscount = { input, isPct -> vm.setCartDiscount(input, isPct) },
+                        onSetTaxConfig = { tt, tm -> vm.setCartTaxConfig(tt, tm) },
+                        onSetPaymentMethod = { vm.setCartPaymentMethod(it) },
+                        onSetAmountPaid = { vm.setCartAmountPaid(it) },
+                        onClearCart = { vm.clearCart() },
+                        onGenerateInvoice = {
+                          vm.completeSaleAndOpenInvoice {
+                            popSubScreen()
+                            pushSubScreen(SubScreen.INVOICE_PREVIEW)
+                          }
+                        },
+                      )
+                    }
                   }
                   SubScreen.INVOICE_PREVIEW -> {
-                    InvoicePreviewScreen(
-                      invoice = activeInvoice,
-                      pdfFile = activePdf,
-                      initialFormat = settings.defaultPaperFormat,
-                      initialLanguage = settings.language,
-                      onRegeneratePdf = { pf, lang -> vm.regeneratePreviewPdf(pf, lang) },
-                      onShowToast = { vm.showToast(it) },
-                      onBack = { popSubScreen() },
-                    )
+                    if (!hasActiveLicense) {
+                      LockedGate("Invoices & PDF", showBackButton = true)
+                    } else {
+                      InvoicePreviewScreen(
+                        invoice = activeInvoice,
+                        pdfFile = activePdf,
+                        initialFormat = settings.defaultPaperFormat,
+                        initialLanguage = settings.language,
+                        onRegeneratePdf = { pf, lang -> vm.regeneratePreviewPdf(pf, lang) },
+                        onShowToast = { vm.showToast(it) },
+                        onBack = { popSubScreen() },
+                      )
+                    }
                   }
                   SubScreen.CUSTOMERS -> {
-                    CustomersScreen(
-                      customers = customers,
-                      invoices = invoices,
-                      currencySymbol = sym,
-                      isShopOpen = isShopOpen,
-                      onToggleShopStatus = { vm.toggleShopOpen() },
-                      openAddImmediately = openAddCustomerDialog,
-                      onConsumeOpenAdd = { openAddCustomerDialog = false },
-                      onBack = { popSubScreen() },
-                      onUpsertCustomer = { vm.upsertCustomer(it) },
-                      onDeleteCustomer = { vm.deleteCustomer(it) },
-                      onCollectPayment = { id, amt -> vm.collectCustomerPayment(id, amt) },
-                      onOpenInvoicePreview = { inv ->
-                        vm.openInvoicePreview(inv) { pushSubScreen(SubScreen.INVOICE_PREVIEW) }
-                      },
-                    )
+                    if (!hasActiveLicense) {
+                      LockedGate("Customers", showBackButton = true)
+                    } else {
+                      CustomersScreen(
+                        customers = customers,
+                        invoices = invoices,
+                        currencySymbol = sym,
+                        isShopOpen = isShopOpen,
+                        onToggleShopStatus = { vm.toggleShopOpen() },
+                        openAddImmediately = openAddCustomerDialog,
+                        onConsumeOpenAdd = { openAddCustomerDialog = false },
+                        onBack = { popSubScreen() },
+                        onUpsertCustomer = { vm.upsertCustomer(it) },
+                        onDeleteCustomer = { vm.deleteCustomer(it) },
+                        onCollectPayment = { id, amt -> vm.collectCustomerPayment(id, amt) },
+                        onOpenInvoicePreview = { inv ->
+                          vm.openInvoicePreview(inv) { pushSubScreen(SubScreen.INVOICE_PREVIEW) }
+                        },
+                      )
+                    }
                   }
                   SubScreen.ORDERS -> {
-                    OrdersScreen(
-                      orders = orders,
-                      products = products,
-                      customers = customers,
-                      invoices = invoices,
-                      defaultTaxType = settings.defaultTaxType,
-                      defaultTaxMode = settings.defaultTaxMode,
-                      autoRoundOff = settings.autoRoundOff,
-                      currencySymbol = sym,
-                      isShopOpen = isShopOpen,
-                      openNewOrderImmediately = openNewOrderDialog,
-                      onConsumeOpenNewOrder = { openNewOrderDialog = false },
-                      onToggleShopStatus = { vm.toggleShopOpen() },
-                      onBack = { popSubScreen() },
-                      onCreateInlineCustomer = { name, mobile, onSaved ->
-                        vm.createInlineCustomer(name, mobile, onSaved)
-                      },
-                      onCreateOrder = { cust, name, mobile, items, notes ->
-                        vm.createOrder(cust, name, mobile, items, notes)
-                      },
-                      onUpdatePendingOrder = { orderId, cust, name, mobile, items, discountVal, isPct, notes ->
-                        vm.updatePendingOrder(
-                          orderId = orderId,
-                          customer = cust,
-                          customerName = name,
-                          customerMobile = mobile,
-                          items = items,
-                          discountValue = discountVal,
-                          isPercentageDiscount = isPct,
-                          notes = notes,
-                        )
-                      },
-                      onCancelOrder = { id -> vm.updateOrderStatus(id, OrderStatus.CANCELLED) },
-                      onConfirmOrder = { order, finalItems, discountVal, isPct, taxType, taxMode, method, paidPaise, notes ->
-                        vm.confirmOrderAndOpenInvoice(
-                          order = order,
-                          finalItems = finalItems,
-                          discountValue = discountVal,
-                          isPercentageDiscount = isPct,
-                          taxType = taxType,
-                          taxMode = taxMode,
-                          paymentMethod = method,
-                          amountPaidPaise = paidPaise,
-                          notes = notes,
-                        ) {
-                          pushSubScreen(SubScreen.INVOICE_PREVIEW)
-                        }
-                      },
-                      onOpenInvoicePreview = { inv ->
-                        vm.openInvoicePreview(inv) { pushSubScreen(SubScreen.INVOICE_PREVIEW) }
-                      },
-                    )
+                    if (!hasActiveLicense) {
+                      LockedGate("Pending Orders", showBackButton = true)
+                    } else {
+                      OrdersScreen(
+                        orders = orders,
+                        products = products,
+                        customers = customers,
+                        invoices = invoices,
+                        defaultTaxType = settings.defaultTaxType,
+                        defaultTaxMode = settings.defaultTaxMode,
+                        autoRoundOff = settings.autoRoundOff,
+                        currencySymbol = sym,
+                        isShopOpen = isShopOpen,
+                        openNewOrderImmediately = openNewOrderDialog,
+                        onConsumeOpenNewOrder = { openNewOrderDialog = false },
+                        onToggleShopStatus = { vm.toggleShopOpen() },
+                        onBack = { popSubScreen() },
+                        onCreateInlineCustomer = { name, mobile, onSaved ->
+                          vm.createInlineCustomer(name, mobile, onSaved)
+                        },
+                        onCreateOrder = { cust, name, mobile, items, notes ->
+                          vm.createOrder(cust, name, mobile, items, notes)
+                        },
+                        onUpdatePendingOrder = { orderId, cust, name, mobile, items, discountVal, isPct, notes ->
+                          vm.updatePendingOrder(
+                            orderId = orderId,
+                            customer = cust,
+                            customerName = name,
+                            customerMobile = mobile,
+                            items = items,
+                            discountValue = discountVal,
+                            isPercentageDiscount = isPct,
+                            notes = notes,
+                          )
+                        },
+                        onCancelOrder = { id -> vm.updateOrderStatus(id, OrderStatus.CANCELLED) },
+                        onConfirmOrder = { order, finalItems, discountVal, isPct, taxType, taxMode, method, paidPaise, notes ->
+                          vm.confirmOrderAndOpenInvoice(
+                            order = order,
+                            finalItems = finalItems,
+                            discountValue = discountVal,
+                            isPercentageDiscount = isPct,
+                            taxType = taxType,
+                            taxMode = taxMode,
+                            paymentMethod = method,
+                            amountPaidPaise = paidPaise,
+                            notes = notes,
+                          ) {
+                            pushSubScreen(SubScreen.INVOICE_PREVIEW)
+                          }
+                        },
+                        onOpenInvoicePreview = { inv ->
+                          vm.openInvoicePreview(inv) { pushSubScreen(SubScreen.INVOICE_PREVIEW) }
+                        },
+                      )
+                    }
                   }
                   SubScreen.EXPENSES -> {
-                    ExpensesScreen(
-                      expenses = expenses,
-                      currencySymbol = sym,
-                      isShopOpen = isShopOpen,
-                      onToggleShopStatus = { vm.toggleShopOpen() },
-                      onBack = { popSubScreen() },
-                      onUpsertExpense = { vm.upsertExpense(it) },
-                      onDeleteExpense = { vm.deleteExpense(it) },
-                    )
+                    if (!hasActiveLicense) {
+                      LockedGate("Expenses", showBackButton = true)
+                    } else {
+                      ExpensesScreen(
+                        expenses = expenses,
+                        currencySymbol = sym,
+                        isShopOpen = isShopOpen,
+                        onToggleShopStatus = { vm.toggleShopOpen() },
+                        onBack = { popSubScreen() },
+                        onUpsertExpense = { vm.upsertExpense(it) },
+                        onDeleteExpense = { vm.deleteExpense(it) },
+                      )
+                    }
                   }
                   SubScreen.INVENTORY -> {
-                    InventoryScreen(
-                      products = products,
-                      movements = movements,
-                      isShopOpen = isShopOpen,
-                      onToggleShopStatus = { vm.toggleShopOpen() },
-                      onBack = { popSubScreen() },
-                      onAdjustStock = { id, type, qty, reason -> vm.adjustStock(id, type, qty, reason) },
-                    )
+                    if (!hasActiveLicense) {
+                      LockedGate("Inventory & Stock", showBackButton = true)
+                    } else {
+                      InventoryScreen(
+                        products = products,
+                        movements = movements,
+                        isShopOpen = isShopOpen,
+                        onToggleShopStatus = { vm.toggleShopOpen() },
+                        onBack = { popSubScreen() },
+                        onAdjustStock = { id, type, qty, reason -> vm.adjustStock(id, type, qty, reason) },
+                      )
+                    }
                   }
                   SubScreen.BUSINESS_PROFILE -> {
-                    BusinessSetupScreen(
-                      existingProfile = business,
-                      canNavigateBack = true,
-                      onBack = { popSubScreen() },
-                      onSave = { profile, uri ->
-                        vm.saveBusinessProfile(profile, uri) { popSubScreen() }
-                      },
-                    )
+                    if (!hasActiveLicense) {
+                      LockedGate("Business Profile", showBackButton = true)
+                    } else {
+                      BusinessSetupScreen(
+                        existingProfile = business,
+                        canNavigateBack = true,
+                        onBack = { popSubScreen() },
+                        onSave = { profile, uri ->
+                          vm.saveBusinessProfile(profile, uri) { popSubScreen() }
+                        },
+                      )
+                    }
                   }
                   SubScreen.INVOICE_SETTINGS -> {
-                    InvoiceSettingsScreen(
-                      settings = settings,
-                      isShopOpen = isShopOpen,
-                      onToggleShopStatus = { vm.toggleShopOpen() },
-                      onBack = { popSubScreen() },
-                      onSaveInvoiceDefaults = { pf, tt, tm, round ->
-                        vm.setDefaultPaperFormat(pf)
-                        vm.updateDefaultGstSettings(tt, tm, round)
-                      },
-                    )
+                    if (!hasActiveLicense) {
+                      LockedGate("Invoice & GST Settings", showBackButton = true)
+                    } else {
+                      InvoiceSettingsScreen(
+                        settings = settings,
+                        isShopOpen = isShopOpen,
+                        onToggleShopStatus = { vm.toggleShopOpen() },
+                        onBack = { popSubScreen() },
+                        onSaveInvoiceDefaults = { pf, tt, tm, round ->
+                          vm.setDefaultPaperFormat(pf)
+                          vm.updateDefaultGstSettings(tt, tm, round)
+                        },
+                      )
+                    }
                   }
                   SubScreen.BACKUP_RESTORE -> {
-                    BackupRestoreScreen(
-                      lastBackupTimestamp = settings.lastBackupTimestamp,
-                      isShopOpen = isShopOpen,
-                      onToggleShopStatus = { vm.toggleShopOpen() },
-                      onBack = { popSubScreen() },
-                      onBuildFullBackupJson = { vm.buildFullBackupJson() },
-                      onExportSingleJson = { vm.exportSingleJson(it) },
-                      onValidateBackup = { vm.validateBackupJson(it) },
-                      onRestoreValidated = { vm.restoreFromValidatedBackup(it) },
-                      onShowToast = { vm.showToast(it) },
-                    )
+                    if (!hasActiveLicense) {
+                      LockedGate("Backup & Restore", showBackButton = true)
+                    } else {
+                      BackupRestoreScreen(
+                        lastBackupTimestamp = settings.lastBackupTimestamp,
+                        isShopOpen = isShopOpen,
+                        onToggleShopStatus = { vm.toggleShopOpen() },
+                        onBack = { popSubScreen() },
+                        onBuildFullBackupJson = { vm.buildFullBackupJson() },
+                        onExportSingleJson = { vm.exportSingleJson(it) },
+                        onValidateBackup = { vm.validateBackupJson(it) },
+                        onRestoreValidated = { vm.restoreFromValidatedBackup(it) },
+                        onShowToast = { vm.showToast(it) },
+                      )
+                    }
                   }
-                                    SubScreen.HELP -> {
+                  SubScreen.HELP -> {
                     HelpSupportScreen(
                       isShopOpen = isShopOpen,
                       onToggleShopStatus = { vm.toggleShopOpen() },
@@ -674,6 +765,7 @@ val paymentErrorMessage by vm.paymentErrorMessage.collectAsStateWithLifecycle()
                       isLoading = isAuthLoading,
                       isAuthenticated = isAuthenticated,
                       authMessage = authMessage,
+                      licenseState = licenseState,
                       paymentRequests = paymentRequests,
                       onSignUp = { email, password ->
                         vm.signUpWithSupabase(email, password)
@@ -685,6 +777,7 @@ val paymentErrorMessage by vm.paymentErrorMessage.collectAsStateWithLifecycle()
                         vm.clearPaymentFeedback()
                         pushSubScreen(SubScreen.LIFETIME_LICENSE)
                       },
+                      onRefreshLicense = { vm.refreshLicenseStatus() },
                       onLogout = {
                         vm.logoutFromSupabase()
                       },
@@ -697,11 +790,18 @@ val paymentErrorMessage by vm.paymentErrorMessage.collectAsStateWithLifecycle()
 
                   SubScreen.LIFETIME_LICENSE -> {
                     LifetimeLicensePaymentScreen(
+                      isAuthenticated = isAuthenticated,
+                      hasActiveLicense = hasActiveLicense,
+                      isLicenseChecking = licenseState.isChecking,
                       isSubmitting = isPaymentSubmitting,
                       isStatusLoading = isPaymentStatusLoading,
                       paymentRequests = paymentRequests,
                       submissionMessage = paymentSubmissionMessage,
                       errorMessage = paymentErrorMessage,
+                      onOpenAccount = {
+                        vm.clearAuthMessage()
+                        pushSubScreen(SubScreen.ACCOUNT)
+                      },
                       onRefreshStatus = { vm.fetchPaymentRequests() },
                       onSubmitPayment = { utr, note ->
                         vm.submitLifetimeLicensePayment(utr, note)
@@ -744,8 +844,15 @@ val paymentErrorMessage by vm.paymentErrorMessage.collectAsStateWithLifecycle()
                               onToggleShopStatus = { vm.toggleShopOpen() },
                               showBack = false,
                               onBackOrMenuClick = { scope.launch { drawerState.open() } },
-                              onAlertClick = { showAlertsDialog = true },
-                              alertCount = metrics.lowStockCount,
+                              onAlertClick = {
+                                if (hasActiveLicense) {
+                                  showAlertsDialog = true
+                                } else {
+                                  vm.clearPaymentFeedback()
+                                  pushSubScreen(SubScreen.LIFETIME_LICENSE)
+                                }
+                              },
+                              alertCount = if (hasActiveLicense) metrics.lowStockCount else 0,
                             )
                           },
                           bottomBar = {
@@ -760,84 +867,110 @@ val paymentErrorMessage by vm.paymentErrorMessage.collectAsStateWithLifecycle()
                           Box(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
                             when (currentTab) {
                               BottomTab.HOME -> {
-                                DashboardScreen(
-                                  business = business,
-                                  metrics = metrics,
-                                  invoices = invoices,
-                                  products = products,
-                                  onNewBill = { pushSubScreen(SubScreen.POS_BILLING) },
-                                  onAddProduct = {
-                                    openAddProductDialog = true
-                                    currentTab = BottomTab.PRODUCTS
-                                  },
-                                  onAddCustomer = {
-                                    openAddCustomerDialog = true
-                                    pushSubScreen(SubScreen.CUSTOMERS)
-                                  },
-                                  onOpenReports = { currentTab = BottomTab.REPORTS },
-                                  onOpenExpenses = { pushSubScreen(SubScreen.EXPENSES) },
-                                  onOpenInvoices = { currentTab = BottomTab.BILLS },
-                                  onOpenInventory = { pushSubScreen(SubScreen.INVENTORY) },
-                                  onOpenInvoicePreview = { inv ->
-                                    vm.openInvoicePreview(inv) {
-                                      pushSubScreen(SubScreen.INVOICE_PREVIEW)
-                                    }
-                                  },
-                                  onOpenCustomers = { pushSubScreen(SubScreen.CUSTOMERS) },
-                                  onOpenProducts = { currentTab = BottomTab.PRODUCTS },
-                                  onOpenOrders = { pushSubScreen(SubScreen.ORDERS) },
-                                )
+                                if (!hasActiveLicense) {
+                                  LockedGate("Dashboard", showBackButton = false)
+                                } else {
+                                  DashboardScreen(
+                                    business = business,
+                                    metrics = metrics,
+                                    invoices = invoices,
+                                    products = products,
+                                    onNewBill = { pushSubScreen(SubScreen.POS_BILLING) },
+                                    onAddProduct = {
+                                      openAddProductDialog = true
+                                      currentTab = BottomTab.PRODUCTS
+                                    },
+                                    onAddCustomer = {
+                                      openAddCustomerDialog = true
+                                      pushSubScreen(SubScreen.CUSTOMERS)
+                                    },
+                                    onOpenReports = { currentTab = BottomTab.REPORTS },
+                                    onOpenExpenses = { pushSubScreen(SubScreen.EXPENSES) },
+                                    onOpenInvoices = { currentTab = BottomTab.BILLS },
+                                    onOpenInventory = { pushSubScreen(SubScreen.INVENTORY) },
+                                    onOpenInvoicePreview = { inv ->
+                                      vm.openInvoicePreview(inv) {
+                                        pushSubScreen(SubScreen.INVOICE_PREVIEW)
+                                      }
+                                    },
+                                    onOpenCustomers = { pushSubScreen(SubScreen.CUSTOMERS) },
+                                    onOpenProducts = { currentTab = BottomTab.PRODUCTS },
+                                    onOpenOrders = { pushSubScreen(SubScreen.ORDERS) },
+                                  )
+                                }
                               }
                               BottomTab.BILLS -> {
-                                BillsHistoryScreen(
-                                  invoices = invoices,
-                                  pendingOrdersCount = metrics.pendingOrdersCount,
-                                  currencySymbol = sym,
-                                  onNewBill = { pushSubScreen(SubScreen.POS_BILLING) },
-                                  onNewOrder = {
-                                    openNewOrderDialog = true
-                                    pushSubScreen(SubScreen.ORDERS)
-                                  },
-                                  onOpenOrders = { pushSubScreen(SubScreen.ORDERS) },
-                                  onOpenInvoice = { inv ->
-                                    vm.openInvoicePreview(inv) {
-                                      pushSubScreen(SubScreen.INVOICE_PREVIEW)
-                                    }
-                                  },
-                                  onDeleteInvoice = { vm.deleteInvoice(it) },
-                                )
+                                if (!hasActiveLicense) {
+                                  LockedGate("Bills & Invoices", showBackButton = false)
+                                } else {
+                                  BillsHistoryScreen(
+                                    invoices = invoices,
+                                    pendingOrdersCount = metrics.pendingOrdersCount,
+                                    currencySymbol = sym,
+                                    onNewBill = { pushSubScreen(SubScreen.POS_BILLING) },
+                                    onNewOrder = {
+                                      openNewOrderDialog = true
+                                      pushSubScreen(SubScreen.ORDERS)
+                                    },
+                                    onOpenOrders = { pushSubScreen(SubScreen.ORDERS) },
+                                    onOpenInvoice = { inv ->
+                                      vm.openInvoicePreview(inv) {
+                                        pushSubScreen(SubScreen.INVOICE_PREVIEW)
+                                      }
+                                    },
+                                    onDeleteInvoice = { vm.deleteInvoice(it) },
+                                  )
+                                }
                               }
                               BottomTab.PRODUCTS -> {
-                                ProductsScreen(
-                                  products = products,
-                                  cartItems = cart.items,
-                                  currencySymbol = sym,
-                                  openAddDialogImmediately = openAddProductDialog,
-                                  onConsumeOpenAdd = { openAddProductDialog = false },
-                                  onUpsertProduct = { prod, uri -> vm.upsertProduct(prod, uri) },
-                                  onDeleteProduct = { vm.deleteProduct(it) },
-                                  onIncrementProductInCart = { prod -> vm.addProductToCart(prod) },
-                                  onDecrementProductInCart = { prod ->
-                                    vm.decrementProductInCart(prod.id)
-                                  },
-                                  onProceedToBill = { pushSubScreen(SubScreen.POS_BILLING) },
-                                )
+                                if (!hasActiveLicense) {
+                                  LockedGate("Products", showBackButton = false)
+                                } else {
+                                  ProductsScreen(
+                                    products = products,
+                                    cartItems = cart.items,
+                                    currencySymbol = sym,
+                                    openAddDialogImmediately = openAddProductDialog,
+                                    onConsumeOpenAdd = { openAddProductDialog = false },
+                                    onUpsertProduct = { prod, uri -> vm.upsertProduct(prod, uri) },
+                                    onDeleteProduct = { vm.deleteProduct(it) },
+                                    onIncrementProductInCart = { prod -> vm.addProductToCart(prod) },
+                                    onDecrementProductInCart = { prod ->
+                                      vm.decrementProductInCart(prod.id)
+                                    },
+                                    onProceedToBill = { pushSubScreen(SubScreen.POS_BILLING) },
+                                  )
+                                }
                               }
                               BottomTab.REPORTS -> {
-                                ReportsScreen(
-                                  business = business,
-                                  invoices = invoices,
-                                  products = products,
-                                  customers = customers,
-                                  expenses = expenses,
-                                  exportDir = vm.repository.invoicesDirectory,
-                                  onShowToast = { vm.showToast(it) },
-                                )
+                                if (!hasActiveLicense) {
+                                  LockedGate("Reports & Analytics", showBackButton = false)
+                                } else {
+                                  ReportsScreen(
+                                    business = business,
+                                    invoices = invoices,
+                                    products = products,
+                                    customers = customers,
+                                    expenses = expenses,
+                                    exportDir = vm.repository.invoicesDirectory,
+                                    onShowToast = { vm.showToast(it) },
+                                  )
+                                }
                               }
                               BottomTab.MORE -> {
                                 MoreScreen(
                                   settings = settings,
                                   isDarkActive = isDarkTheme,
+                                  isAuthenticated = isAuthenticated,
+                                  hasActiveLicense = hasActiveLicense,
+                                  onOpenAccount = {
+                                    vm.clearAuthMessage()
+                                    pushSubScreen(SubScreen.ACCOUNT)
+                                  },
+                                  onOpenLifetimeLicense = {
+                                    vm.clearPaymentFeedback()
+                                    pushSubScreen(SubScreen.LIFETIME_LICENSE)
+                                  },
                                   onOpenCustomers = { pushSubScreen(SubScreen.CUSTOMERS) },
                                   onOpenOrders = { pushSubScreen(SubScreen.ORDERS) },
                                   onOpenExpenses = { pushSubScreen(SubScreen.EXPENSES) },
@@ -896,7 +1029,7 @@ val paymentErrorMessage by vm.paymentErrorMessage.collectAsStateWithLifecycle()
           }
         }
 
-        if (showAlertsDialog) {
+        if (showAlertsDialog && hasActiveLicense) {
           val lowProducts = products.filter { it.stockQty <= it.lowStockThreshold }
           val dueCustomers = customers.filter { it.outstandingBalancePaise > 0 }
           VyaparFormDialog(
@@ -1253,10 +1386,12 @@ private fun AuthAccountScreen(
     isLoading: Boolean,
     isAuthenticated: Boolean,
     authMessage: String?,
+    licenseState: LicenseAccessState,
     paymentRequests: List<PaymentRequestRecord>,
     onSignUp: (String, String) -> Unit,
     onLogin: (String, String) -> Unit,
     onOpenLifetimeLicense: () -> Unit,
+    onRefreshLicense: () -> Unit,
     onLogout: () -> Unit,
     onBack: () -> Unit,
 ) {
@@ -1294,16 +1429,22 @@ private fun AuthAccountScreen(
             val approvedReq = paymentRequests.firstOrNull { it.status == PaymentRequestStatus.APPROVED }
             val pendingReq = paymentRequests.firstOrNull { it.status == PaymentRequestStatus.PENDING }
             val rejectedReq = paymentRequests.firstOrNull { it.status == PaymentRequestStatus.REJECTED }
+            val hasActiveLicense = licenseState.hasActiveLicense
             val licenseStatusText = when {
-                approvedReq != null -> "Lifetime License Active (Approved)"
+                hasActiveLicense -> "Lifetime License Active"
+                licenseState.isChecking -> "Verifying License Status..."
+                licenseState.status == LicenseStatus.ERROR ->
+                    licenseState.message ?: "Verification Failed — Tap Refresh"
                 pendingReq != null -> "Payment Under Verification (Pending)"
                 rejectedReq != null -> "Last Request Rejected — Resubmit Required"
-                else -> "Standard Plan • Upgrade for ₹499"
+                approvedReq != null -> "Payment Approved — Tap Refresh to verify active license"
+                else -> "Inactive • Activate Lifetime License for ₹499"
             }
             val licenseStatusColor = when {
-                approvedReq != null -> EmeraldGreen
-                pendingReq != null -> AmberGold
-                rejectedReq != null -> com.example.ui.theme.AlertRed
+                hasActiveLicense -> EmeraldGreen
+                licenseState.status == LicenseStatus.ERROR || rejectedReq != null ->
+                    com.example.ui.theme.AlertRed
+                pendingReq != null || approvedReq != null -> AmberGold
                 else -> SaffronOrange
             }
 
@@ -1344,10 +1485,26 @@ private fun AuthAccountScreen(
                 ) {
                     Text(
                         text =
-                            if (approvedReq != null) "View Lifetime License"
+                            if (hasActiveLicense) "View Lifetime License"
                             else "Activate Lifetime License (₹499)",
                         color = Color.White,
                         fontWeight = FontWeight.ExtraBold,
+                    )
+                }
+
+                Spacer(Modifier.height(10.dp))
+
+                Button3D(
+                    onClick = onRefreshLicense,
+                    enabled = !licenseState.isChecking && !isLoading,
+                    isPrimary = false,
+                    cornerRadius = 16.dp,
+                    modifier = Modifier.fillMaxWidth().testTag("account_refresh_license_btn"),
+                ) {
+                    Text(
+                        text = if (licenseState.isChecking) "Verifying License..." else "Refresh License Status",
+                        fontWeight = FontWeight.Bold,
+                        color = palette.textPrimary,
                     )
                 }
 

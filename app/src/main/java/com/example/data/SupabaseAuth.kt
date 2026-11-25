@@ -17,9 +17,9 @@ data class AuthResult(
     val isNetworkError: Boolean = false
 )
 
-class SupabaseAuth {
-
-    private val client = OkHttpClient()
+class SupabaseAuth(
+    private val client: OkHttpClient = OkHttpClient()
+) {
     private val jsonType = "application/json; charset=utf-8".toMediaType()
 
     fun signUp(email: String, password: String): AuthResult {

@@ -76,11 +76,15 @@ import com.example.ui.theme.SaffronOrange
 
 @Composable
 fun LifetimeLicensePaymentScreen(
+  isAuthenticated: Boolean,
+  hasActiveLicense: Boolean,
+  isLicenseChecking: Boolean,
   isSubmitting: Boolean,
   isStatusLoading: Boolean,
   paymentRequests: List<PaymentRequestRecord>,
   submissionMessage: String?,
   errorMessage: String?,
+  onOpenAccount: () -> Unit,
   onRefreshStatus: () -> Unit,
   onSubmitPayment: (utr: String, customerNote: String) -> Unit,
   onShowToast: (String) -> Unit,
@@ -100,7 +104,11 @@ fun LifetimeLicensePaymentScreen(
   var customerNote by remember { mutableStateOf("") }
   var localLaunchError by remember { mutableStateOf<String?>(null) }
 
-  LaunchedEffect(Unit) { onRefreshStatus() }
+  LaunchedEffect(isAuthenticated) {
+    if (isAuthenticated) {
+      onRefreshStatus()
+    }
+  }
   LaunchedEffect(submissionMessage) {
     if (submissionMessage == "Payment Under Verification") {
       utrInput = ""
@@ -110,9 +118,10 @@ fun LifetimeLicensePaymentScreen(
 
   val approvedRequest = paymentRequests.firstOrNull { it.status == PaymentRequestStatus.APPROVED }
   val pendingRequest = paymentRequests.firstOrNull { it.status == PaymentRequestStatus.PENDING }
-  val hasBlockingRequest = approvedRequest != null || pendingRequest != null
+  val hasBlockingRequest = hasActiveLicense || approvedRequest != null || pendingRequest != null
   val showVerificationBanner =
-    submissionMessage == "Payment Under Verification" || pendingRequest != null
+    !hasActiveLicense && (submissionMessage == "Payment Under Verification" || pendingRequest != null)
+  val isRefreshingAny = isStatusLoading || isLicenseChecking
 
   val liveUtrValidationError =
     remember(utrInput) {
@@ -167,10 +176,10 @@ fun LifetimeLicensePaymentScreen(
         modifier =
           Modifier.size(48.dp)
             .clip(RoundedCornerShape(14.dp))
-            .clickable(enabled = !isStatusLoading, onClick = onRefreshStatus)
+            .clickable(enabled = !isRefreshingAny && isAuthenticated, onClick = onRefreshStatus)
             .testTag("refresh_payment_status_btn"),
       ) {
-        if (isStatusLoading) {
+        if (isRefreshingAny) {
           CircularProgressIndicator(
             modifier = Modifier.size(20.dp),
             strokeWidth = 2.dp,
@@ -179,7 +188,7 @@ fun LifetimeLicensePaymentScreen(
         } else {
           Icon3D(
             imageVector = Icons.Filled.Refresh,
-            contentDescription = "Refresh payment status",
+            contentDescription = "Refresh payment and license status",
             tone = ClayTones.Orange,
             size = 22.dp,
           )
@@ -231,10 +240,47 @@ fun LifetimeLicensePaymentScreen(
       }
     }
 
-    // Approved Banner
-    if (approvedRequest != null) {
+    // Login Required Card if unauthenticated
+    if (!isAuthenticated) {
       Card3D(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().testTag("payment_login_required_card"),
+        cornerRadius = 22.dp,
+        accentBorderColor = SaffronOrange,
+        shadowDepth = 5.dp,
+        contentPadding = PaddingValues(16.dp),
+      ) {
+        Text(
+          text = "Login Required to Activate",
+          style = MaterialTheme.typography.titleMedium,
+          fontWeight = FontWeight.ExtraBold,
+          color = palette.textPrimary,
+        )
+        Spacer(Modifier.height(4.dp))
+        Text(
+          text = "Please sign in or create an account before submitting your payment UTR.",
+          style = MaterialTheme.typography.bodySmall,
+          color = palette.textSecondary,
+        )
+        Spacer(Modifier.height(10.dp))
+        Button3D(
+          onClick = onOpenAccount,
+          tone = ClayTones.Orange,
+          cornerRadius = 16.dp,
+          modifier = Modifier.fillMaxWidth().testTag("payment_go_to_login_btn"),
+        ) {
+          Text(
+            text = "Login / Create Account",
+            color = Color.White,
+            fontWeight = FontWeight.ExtraBold,
+          )
+        }
+      }
+    }
+
+    // Active Verified License Banner (from Supabase /rest/v1/licenses only)
+    if (hasActiveLicense) {
+      Card3D(
+        modifier = Modifier.fillMaxWidth().testTag("active_license_banner"),
         cornerRadius = 22.dp,
         tone = ClayTones.Green,
         shadowDepth = 5.dp,
@@ -243,22 +289,57 @@ fun LifetimeLicensePaymentScreen(
         Row(verticalAlignment = Alignment.CenterVertically) {
           Icon(
             imageVector = Icons.Filled.CheckCircle,
-            contentDescription = "Approved",
+            contentDescription = "Active License",
             tint = Color.White,
             modifier = Modifier.size(28.dp),
           )
           Spacer(Modifier.width(12.dp))
           Column {
             Text(
-              text = "Lifetime License Approved",
+              text = "Lifetime License Active",
               style = MaterialTheme.typography.titleMedium,
               fontWeight = FontWeight.ExtraBold,
               color = Color.White,
             )
             Text(
-              text = "Verified UTR: ${approvedRequest.utr}",
+              text =
+                approvedRequest?.utr?.takeIf { it.isNotBlank() }?.let { "Verified UTR: $it" }
+                  ?: "All Vyapar Billing Pro features are unlocked.",
               style = MaterialTheme.typography.bodySmall,
               color = Color.White.copy(alpha = 0.92f),
+            )
+          }
+        }
+      }
+    } else if (approvedRequest != null) {
+      Card3D(
+        modifier = Modifier.fillMaxWidth(),
+        cornerRadius = 22.dp,
+        accentBorderColor = AmberGold,
+        shadowDepth = 5.dp,
+        contentPadding = PaddingValues(16.dp),
+      ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+          ClayIconPad(
+            imageVector = Icons.Filled.HourglassTop,
+            contentDescription = "Syncing License",
+            tone = ClayTones.Amber,
+            padSize = 46.dp,
+            iconSize = 24.dp,
+            cornerRadius = 15.dp,
+          )
+          Spacer(Modifier.width(12.dp))
+          Column(modifier = Modifier.weight(1f)) {
+            Text(
+              text = "Payment Approved — License Pending Activation",
+              style = MaterialTheme.typography.titleMedium,
+              fontWeight = FontWeight.ExtraBold,
+              color = palette.textPrimary,
+            )
+            Text(
+              text = "Your active license row is not active yet. Tap Refresh to verify with server.",
+              style = MaterialTheme.typography.bodySmall,
+              color = palette.textSecondary,
             )
           }
         }
@@ -403,7 +484,7 @@ fun LifetimeLicensePaymentScreen(
                 "No UPI app found on this device. Pay ₹499 to ${SupabasePaymentService.PHONEPE_UPI_ID} and enter your UTR below."
             }
         },
-        enabled = !isSubmitting && approvedRequest == null,
+        enabled = !isSubmitting && !hasActiveLicense && approvedRequest == null,
         tone = ClayTones.Purple,
         cornerRadius = 18.dp,
         modifier = Modifier.fillMaxWidth().testTag("pay_with_phonepe_btn"),
@@ -495,7 +576,7 @@ fun LifetimeLicensePaymentScreen(
           localLaunchError = null
           onSubmitPayment(utrInput, customerNote)
         },
-        enabled = !isSubmitting && !hasBlockingRequest && utrInput.isNotBlank(),
+        enabled = isAuthenticated && !isSubmitting && !hasBlockingRequest && utrInput.isNotBlank(),
         tone = ClayTones.Orange,
         cornerRadius = 18.dp,
         modifier = Modifier.fillMaxWidth().testTag("submit_payment_btn"),
@@ -512,11 +593,15 @@ fun LifetimeLicensePaymentScreen(
           Text(
             text =
               when {
-                approvedRequest != null -> "License Already Approved"
+                !isAuthenticated -> "Login First to Submit UTR"
+                hasActiveLicense -> "Lifetime License Active"
+                approvedRequest != null -> "Payment Approved — Tap Refresh"
                 pendingRequest != null -> "Verification Pending"
                 else -> "Submit Payment Request"
               },
-            color = if (!hasBlockingRequest && utrInput.isNotBlank()) Color.White else palette.textSecondary,
+            color =
+              if (isAuthenticated && !hasBlockingRequest && utrInput.isNotBlank()) Color.White
+              else palette.textSecondary,
             fontWeight = FontWeight.ExtraBold,
             fontSize = 15.sp,
           )
@@ -574,12 +659,12 @@ fun LifetimeLicensePaymentScreen(
           modifier =
             Modifier.defaultMinSize(minHeight = 36.dp)
               .raised3D(cornerRadius = 12.dp, shadowDepth = 2.dp)
-              .clickable(enabled = !isStatusLoading, onClick = onRefreshStatus)
+              .clickable(enabled = !isRefreshingAny && isAuthenticated, onClick = onRefreshStatus)
               .padding(horizontal = 10.dp, vertical = 6.dp),
           contentAlignment = Alignment.Center,
         ) {
           Text(
-            text = if (isStatusLoading) "Checking..." else "Refresh",
+            text = if (isRefreshingAny) "Checking..." else "Refresh",
             fontSize = 12.sp,
             fontWeight = FontWeight.Bold,
             color = SaffronOrange,

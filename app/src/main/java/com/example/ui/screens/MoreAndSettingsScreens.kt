@@ -40,6 +40,8 @@ import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Receipt
 import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.VerifiedUser
+import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -91,6 +93,10 @@ import kotlinx.coroutines.launch
 fun MoreScreen(
   settings: AppSettings,
   isDarkActive: Boolean,
+  isAuthenticated: Boolean,
+  hasActiveLicense: Boolean,
+  onOpenAccount: () -> Unit,
+  onOpenLifetimeLicense: () -> Unit,
   onOpenCustomers: () -> Unit,
   onOpenOrders: () -> Unit,
   onOpenExpenses: () -> Unit,
@@ -112,6 +118,41 @@ fun MoreScreen(
     contentPadding = PaddingValues(start = 14.dp, end = 14.dp, top = 10.dp, bottom = 22.dp),
     verticalArrangement = Arrangement.spacedBy(14.dp),
   ) {
+    item {
+      Text(
+        text = "Account & License",
+        style = MaterialTheme.typography.labelLarge,
+        fontWeight = FontWeight.Bold,
+        color = palette.textSecondary,
+        modifier = Modifier.padding(start = 6.dp, bottom = 8.dp),
+      )
+      Card3D(
+        cornerRadius = 24.dp,
+        shadowDepth = 5.dp,
+        contentPadding = PaddingValues(10.dp),
+      ) {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+          SettingsRow3D(
+            title = "My Account & License",
+            subtitle = when {
+              hasActiveLicense -> "Lifetime License Active"
+              isAuthenticated -> "Signed in • Activate ₹499 Lifetime License"
+              else -> "Login / Create Account to activate"
+            },
+            icon = Icons.Filled.AccountCircle,
+            tone = if (hasActiveLicense) ClayTones.Green else ClayTones.Orange,
+            onClick = onOpenAccount,
+          )
+          SettingsRow3D(
+            title = if (hasActiveLicense) "Lifetime License Active" else "Activate Lifetime License (₹499)",
+            subtitle = if (hasActiveLicense) "Verified active server license" else "Pay ₹499 via PhonePe UPI & submit UTR",
+            icon = Icons.Filled.VerifiedUser,
+            tone = if (hasActiveLicense) ClayTones.Green else ClayTones.Purple,
+            onClick = onOpenLifetimeLicense,
+          )
+        }
+      }
+    }
     item {
       Text(
         text = "Business Operations",

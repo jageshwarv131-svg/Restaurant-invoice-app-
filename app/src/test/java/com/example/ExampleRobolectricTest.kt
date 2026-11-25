@@ -463,4 +463,193 @@ class ExampleRobolectricTest {
     assertEquals(499, parsed.amountInr)
     assertEquals("432912345678", parsed.utr)
   }
+
+  private fun mockLicenseClient(
+    handler: (okhttp3.Request) -> okhttp3.Response
+  ): okhttp3.OkHttpClient {
+    return okhttp3.OkHttpClient.Builder()
+      .addInterceptor { chain -> handler(chain.request()) }
+      .build()
+  }
+
+  private fun jsonHttpResponse(
+    request: okhttp3.Request,
+    code: Int,
+    body: String,
+  ): okhttp3.Response {
+    val mediaType = with(okhttp3.MediaType.Companion) { "application/json; charset=utf-8".toMediaType() }
+    val responseBody = with(okhttp3.ResponseBody.Companion) { body.toResponseBody(mediaType) }
+    return okhttp3.Response.Builder()
+      .request(request)
+      .protocol(okhttp3.Protocol.HTTP_1_1)
+      .code(code)
+      .message(if (code in 200..299) "OK" else "Error")
+      .body(responseBody)
+      .build()
+  }
+
+  @Test
+  fun `license verification URL targets GET rest v1 licenses with user_id and status active`() {
+    val url = com.example.data.SupabaseLicenseService.buildLicensesCheckUrl(userId = "user-abc-123")
+    assertTrue(url.contains("/rest/v1/licenses"))
+    assertTrue(url.contains("user_id=eq.user-abc-123"))
+    assertTrue(url.contains("status=eq.active"))
+  }
+
+  @Test
+  fun `active lifetime license grants access and sends authenticated bearer and apikey headers`() {
+    var capturedAuth: String? = null
+    var capturedApiKey: String? = null
+    var capturedUrl: String? = null
+    val client = mockLicenseClient { req ->
+      capturedAuth = req.header("Authorization")
+      capturedApiKey = req.header("apikey")
+      capturedUrl = req.url.toString()
+      jsonHttpResponse(
+        req,
+        200,
+        """[{"id":"lic_001","user_id":"user-123","status":"active"}]""",
+      )
+    }
+
+    val service = com.example.data.SupabaseLicenseService(client)
+    val result = service.verifyActiveLicense(accessToken = "jwt-token-xyz", userId = "user-123")
+
+    assertEquals(true, result.hasActiveLicense)
+    assertEquals(com.example.data.LicenseStatus.ACTIVE, result.status)
+    assertEquals("lic_001", result.licenseId)
+    assertEquals("Bearer jwt-token-xyz", capturedAuth)
+    assertTrue(!capturedApiKey.isNullOrBlank())
+    assertTrue(capturedUrl!!.contains("user_id=eq.user-123"))
+    assertTrue(capturedUrl!!.contains("status=eq.active"))
+  }
+
+  @Test
+  fun `pending payment or pending license never grants premium access`() {
+    val client = mockLicenseClient { req ->
+      jsonHttpResponse(
+        req,
+        200,
+        """[{"id":"lic_002","user_id":"user-123","status":"pending"}]""",
+      )
+    }
+    val service = com.example.data.SupabaseLicenseService(client)
+    val result = service.verifyActiveLicense(accessToken = "jwt-token", userId = "user-123")
+
+    assertEquals(false, result.hasActiveLicense)
+    assertEquals(com.example.data.LicenseStatus.INACTIVE, result.status)
+
+    // Also verify pending payment request alone never yields an active status
+    val pendingPayment =
+      com.example.data.PaymentRequestRecord(
+        id = "pay_1",
+        userId = "user-123",
+        status = com.example.data.PaymentRequestStatus.PENDING,
+        utr = "432912345678",
+      )
+    assertEquals(com.example.data.PaymentRequestStatus.PENDING, pendingPayment.status)
+  }
+
+  @Test
+  fun `rejected license never grants premium access`() {
+    val client = mockLicenseClient { req ->
+      jsonHttpResponse(
+        req,
+        200,
+        """[{"id":"lic_003","user_id":"user-123","status":"rejected"}]""",
+      )
+    }
+    val service = com.example.data.SupabaseLicenseService(client)
+    val result = service.verifyActiveLicense(accessToken = "jwt-token", userId = "user-123")
+
+    assertEquals(false, result.hasActiveLicense)
+    assertEquals(com.example.data.LicenseStatus.INACTIVE, result.status)
+  }
+
+  @Test
+  fun `missing license empty array never grants premium access`() {
+    val client = mockLicenseClient { req -> jsonHttpResponse(req, 200, "[]") }
+    val service = com.example.data.SupabaseLicenseService(client)
+    val result = service.verifyActiveLicense(accessToken = "jwt-token", userId = "user-123")
+
+    assertEquals(false, result.hasActiveLicense)
+    assertEquals(com.example.data.LicenseStatus.INACTIVE, result.status)
+  }
+
+  @Test
+  fun `mismatched user_id license row never grants premium access`() {
+    val client = mockLicenseClient { req ->
+      jsonHttpResponse(
+        req,
+        200,
+        """[{"id":"lic_999","user_id":"other-user","status":"active"}]""",
+      )
+    }
+    val service = com.example.data.SupabaseLicenseService(client)
+    val result = service.verifyActiveLicense(accessToken = "jwt-token", userId = "user-123")
+
+    assertEquals(false, result.hasActiveLicense)
+    assertEquals(com.example.data.LicenseStatus.INACTIVE, result.status)
+  }
+
+  @Test
+  fun `unauthenticated empty credentials and HTTP 401 never grant premium access`() {
+    val service = com.example.data.SupabaseLicenseService()
+
+    val noToken = service.verifyActiveLicense(accessToken = "", userId = "user-123")
+    assertEquals(false, noToken.hasActiveLicense)
+    assertEquals(com.example.data.LicenseStatus.UNAUTHENTICATED, noToken.status)
+    assertEquals(true, noToken.isUnauthorized)
+
+    val noUser = service.verifyActiveLicense(accessToken = "jwt-token", userId = "")
+    assertEquals(false, noUser.hasActiveLicense)
+    assertEquals(com.example.data.LicenseStatus.UNAUTHENTICATED, noUser.status)
+    assertEquals(true, noUser.isUnauthorized)
+
+    val client401 = mockLicenseClient { req ->
+      jsonHttpResponse(req, 401, """{"message":"JWT expired"}""")
+    }
+    val expiredResult =
+      com.example.data.SupabaseLicenseService(client401)
+        .verifyActiveLicense(accessToken = "expired-jwt", userId = "user-123")
+    assertEquals(false, expiredResult.hasActiveLicense)
+    assertEquals(com.example.data.LicenseStatus.UNAUTHENTICATED, expiredResult.status)
+    assertEquals(true, expiredResult.isUnauthorized)
+  }
+
+  @Test
+  fun `network failure and server 500 error never grant premium access`() {
+    val ioErrorClient = mockLicenseClient { _ ->
+      throw java.io.IOException("Simulated network timeout")
+    }
+    val ioResult =
+      com.example.data.SupabaseLicenseService(ioErrorClient)
+        .verifyActiveLicense(accessToken = "jwt-token", userId = "user-123")
+    assertEquals(false, ioResult.hasActiveLicense)
+    assertEquals(com.example.data.LicenseStatus.ERROR, ioResult.status)
+    assertEquals(true, ioResult.isNetworkError)
+
+    val server500Client = mockLicenseClient { req ->
+      jsonHttpResponse(req, 500, """{"message":"Internal server error"}""")
+    }
+    val serverResult =
+      com.example.data.SupabaseLicenseService(server500Client)
+        .verifyActiveLicense(accessToken = "jwt-token", userId = "user-123")
+    assertEquals(false, serverResult.hasActiveLicense)
+    assertEquals(com.example.data.LicenseStatus.ERROR, serverResult.status)
+  }
+
+  @Test
+  fun `VyaparViewModel defaults to locked unauthenticated license state`() {
+    val controller = org.robolectric.Robolectric.buildActivity(MainActivity::class.java).setup()
+    val vm =
+      androidx.lifecycle.ViewModelProvider(controller.get())[com.example.ui.VyaparViewModel::class.java]
+
+    assertEquals(false, vm.isAuthenticated.value)
+    assertEquals(false, vm.licenseState.value.hasActiveLicense)
+    assertEquals(
+      com.example.data.LicenseStatus.UNAUTHENTICATED,
+      vm.licenseState.value.status,
+    )
+  }
 }
