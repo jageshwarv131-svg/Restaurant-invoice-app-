@@ -115,6 +115,11 @@ fun LifetimeLicensePaymentScreen(
       customerNote = ""
     }
   }
+  LaunchedEffect(errorMessage) {
+    if (!errorMessage.isNullOrBlank()) {
+      onShowToast(errorMessage)
+    }
+  }
 
   val approvedRequest = paymentRequests.firstOrNull { it.status == PaymentRequestStatus.APPROVED }
   val pendingRequest = paymentRequests.firstOrNull { it.status == PaymentRequestStatus.PENDING }
@@ -569,7 +574,36 @@ fun LifetimeLicensePaymentScreen(
         modifier = Modifier.fillMaxWidth().testTag("customer_note_input"),
       )
 
-      Spacer(Modifier.height(14.dp))
+      Spacer(Modifier.height(12.dp))
+
+      // Prominent Inline Error Feedback directly above Submit button (shows HTTP status & safe Supabase details)
+      val displayError = localLaunchError ?: errorMessage
+      if (!displayError.isNullOrBlank()) {
+        Card3D(
+          modifier = Modifier.fillMaxWidth().testTag("payment_error_card"),
+          cornerRadius = 18.dp,
+          accentBorderColor = AlertRed,
+          shadowDepth = 3.dp,
+          contentPadding = PaddingValues(14.dp),
+        ) {
+          Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon3D(
+              imageVector = Icons.Filled.ErrorOutline,
+              contentDescription = "Error",
+              tone = ClayTones.Red,
+              size = 24.dp,
+            )
+            Spacer(Modifier.width(10.dp))
+            Text(
+              text = displayError,
+              color = AlertRed,
+              style = MaterialTheme.typography.bodyMedium,
+              fontWeight = FontWeight.SemiBold,
+            )
+          }
+        }
+        Spacer(Modifier.height(12.dp))
+      }
 
       Button3D(
         onClick = {
@@ -604,34 +638,6 @@ fun LifetimeLicensePaymentScreen(
               else palette.textSecondary,
             fontWeight = FontWeight.ExtraBold,
             fontSize = 15.sp,
-          )
-        }
-      }
-    }
-
-    // Error Feedback
-    val displayError = localLaunchError ?: errorMessage
-    if (!displayError.isNullOrBlank()) {
-      Card3D(
-        modifier = Modifier.fillMaxWidth().testTag("payment_error_card"),
-        cornerRadius = 18.dp,
-        accentBorderColor = AlertRed,
-        shadowDepth = 3.dp,
-        contentPadding = PaddingValues(14.dp),
-      ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-          Icon3D(
-            imageVector = Icons.Filled.ErrorOutline,
-            contentDescription = "Error",
-            tone = ClayTones.Red,
-            size = 24.dp,
-          )
-          Spacer(Modifier.width(10.dp))
-          Text(
-            text = displayError,
-            color = AlertRed,
-            style = MaterialTheme.typography.bodyMedium,
-            fontWeight = FontWeight.SemiBold,
           )
         }
       }

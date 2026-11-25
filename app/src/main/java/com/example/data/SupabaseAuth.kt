@@ -111,7 +111,11 @@ class SupabaseAuth(
                 val refreshToken = json.optString("refresh_token")
                     .takeIf { it.isNotBlank() }
 
-                val userId = (user?.optString("id")?.takeIf { it.isNotBlank() }
+                val jwtUserId = accessToken?.let {
+                    SupabasePaymentService.extractJwtClaims(it)?.userId
+                }
+                val userId = (jwtUserId
+                    ?: user?.optString("id")?.takeIf { it.isNotBlank() }
                     ?: json.optString("id").takeIf { it.isNotBlank() })
 
                 if (accessToken == null || userId == null) {

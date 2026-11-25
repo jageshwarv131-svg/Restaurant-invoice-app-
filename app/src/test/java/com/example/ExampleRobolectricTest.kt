@@ -652,4 +652,201 @@ class ExampleRobolectricTest {
       vm.licenseState.value.status,
     )
   }
+
+  private fun buildMockJwt(
+    sub: String,
+    role: String = "authenticated",
+    expEpochSeconds: Long = (System.currentTimeMillis() / 1000L) + 3600L,
+  ): String {
+    val encoder = java.util.Base64.getUrlEncoder().withoutPadding()
+    val header = encoder.encodeToString("""{"alg":"HS256","typ":"JWT"}""".toByteArray(Charsets.UTF_8))
+    val payloadJson =
+      org.json.JSONObject()
+        .put("sub", sub)
+        .put("role", role)
+        .put("exp", expEpochSeconds)
+        .toString()
+    val payload = encoder.encodeToString(payloadJson.toByteArray(Charsets.UTF_8))
+    return "$header.$payload.mock-signature"
+  }
+
+  @Test
+  fun `payment submission sends exact headers URL and JSON payload and requires confirmed row`() {
+    val userId = "11111111-2222-3333-4444-555555555555"
+    val token = buildMockJwt(sub = userId)
+    var capturedUrl: String? = null
+    var capturedMethod: String? = null
+    var capturedAuth: String? = null
+    var capturedApiKey: String? = null
+    var capturedContentType: String? = null
+    var capturedBodyContentType: String? = null
+    var capturedPrefer: String? = null
+    var capturedBodyText: String? = null
+
+    val client = mockLicenseClient { req ->
+      capturedUrl = req.url.toString()
+      capturedMethod = req.method
+      capturedAuth = req.header("Authorization")
+      capturedApiKey = req.header("apikey")
+      capturedContentType = req.header("Content-Type")
+      capturedBodyContentType = req.body?.contentType()?.toString()
+      capturedPrefer = req.header("Prefer")
+      val buffer = okio.Buffer()
+      req.body?.writeTo(buffer)
+      capturedBodyText = buffer.readUtf8()
+      jsonHttpResponse(
+        req,
+        201,
+        """[{"id":"pay_987","user_id":"$userId","amount_inr":499,"payment_method":"UPI","utr":"987654321012","status":"pending","customer_note":"Shop A","created_at":"2026-11-25T11:00:00Z"}]""",
+      )
+    }
+
+    val service = com.example.data.SupabasePaymentService(client)
+    val result =
+      service.submitPaymentRequest(
+        accessToken = token,
+        userId = userId,
+        utrInput = "987654321012",
+        customerNote = "Shop A",
+      )
+
+    assertEquals(true, result.success)
+    assertEquals(201, result.httpStatusCode)
+    assertEquals("POST", capturedMethod)
+    assertTrue(capturedUrl!!.endsWith("/rest/v1/payment_requests"))
+    assertEquals("Bearer $token", capturedAuth)
+    assertEquals(com.example.data.SupabaseConfig.SUPABASE_ANON_KEY, capturedApiKey)
+    assertEquals("application/json", capturedContentType)
+    assertEquals("application/json", capturedBodyContentType)
+    assertEquals("return=representation", capturedPrefer)
+
+    val sentJson = org.json.JSONObject(capturedBodyText!!)
+    assertEquals(userId, sentJson.getString("user_id"))
+    assertEquals(499, sentJson.getInt("amount_inr"))
+    assertEquals("UPI", sentJson.getString("payment_method"))
+    assertEquals("987654321012", sentJson.getString("utr"))
+    assertEquals("pending", sentJson.getString("status"))
+    assertEquals("Shop A", sentJson.getString("customer_note"))
+
+    assertEquals("pay_987", result.request?.id)
+    assertEquals("987654321012", result.request?.utr)
+    assertEquals(com.example.data.PaymentRequestStatus.PENDING, result.request?.status)
+  }
+
+  @Test
+  fun `payment submission rejects JWT sub mismatch expired token and non-authenticated role before network`() {
+    var networkCalled = false
+    val client = mockLicenseClient { req ->
+      networkCalled = true
+      jsonHttpResponse(req, 201, "[]")
+    }
+    val service = com.example.data.SupabasePaymentService(client)
+
+    val mismatch =
+      service.submitPaymentRequest(
+        accessToken = buildMockJwt(sub = "jwt-user-aaa"),
+        userId = "different-user-bbb",
+        utrInput = "987654321012",
+        customerNote = "",
+      )
+    assertEquals(false, mismatch.success)
+    assertEquals(true, mismatch.isUnauthorized)
+    assertTrue(mismatch.message.contains("mismatch", ignoreCase = true))
+    assertEquals(false, networkCalled)
+
+    val expired =
+      service.submitPaymentRequest(
+        accessToken = buildMockJwt(sub = "user-1", expEpochSeconds = 1000L),
+        userId = "user-1",
+        utrInput = "987654321012",
+        customerNote = "",
+        currentEpochSeconds = 2000L,
+      )
+    assertEquals(false, expired.success)
+    assertEquals(true, expired.isUnauthorized)
+    assertEquals(false, networkCalled)
+
+    val wrongRole =
+      service.submitPaymentRequest(
+        accessToken = buildMockJwt(sub = "user-1", role = "anon"),
+        userId = "user-1",
+        utrInput = "987654321012",
+        customerNote = "",
+      )
+    assertEquals(false, wrongRole.success)
+    assertEquals(true, wrongRole.isUnauthorized)
+    assertEquals(false, networkCalled)
+  }
+
+  @Test
+  fun `payment submission rejects unconfirmed 201 empty response and formats RLS duplicate errors safely`() {
+    val userId = "user-uuid-555"
+    val token = buildMockJwt(sub = userId)
+
+    // 1. Empty 201 response must NOT silently succeed
+    val empty201Client = mockLicenseClient { req -> jsonHttpResponse(req, 201, "[]") }
+    val emptyResult =
+      com.example.data.SupabasePaymentService(empty201Client)
+        .submitPaymentRequest(token, userId, "987654321012", "")
+    assertEquals(false, emptyResult.success)
+    assertEquals(201, emptyResult.httpStatusCode)
+    assertTrue(emptyResult.message.contains("HTTP 201"))
+
+    // 2. RLS 403 error surfaces code + details + hint cleanly
+    val rls403Client = mockLicenseClient { req ->
+      jsonHttpResponse(
+        req,
+        403,
+        """{"code":"42501","message":"new row violates row-level security policy for table \"payment_requests\"","details":"Failing row contains (...).","hint":"Check WITH CHECK policy"}""",
+      )
+    }
+    val rlsResult =
+      com.example.data.SupabasePaymentService(rls403Client)
+        .submitPaymentRequest(token, userId, "987654321012", "")
+    assertEquals(false, rlsResult.success)
+    assertEquals(403, rlsResult.httpStatusCode)
+    assertTrue(rlsResult.message.contains("HTTP 403 (42501)"))
+    assertTrue(rlsResult.message.contains("row-level security"))
+
+    // 3. Duplicate UTR 409 error
+    val dup409Client = mockLicenseClient { req ->
+      jsonHttpResponse(
+        req,
+        409,
+        """{"code":"23505","message":"duplicate key value violates unique constraint"}""",
+      )
+    }
+    val dupResult =
+      com.example.data.SupabasePaymentService(dup409Client)
+        .submitPaymentRequest(token, userId, "987654321012", "")
+    assertEquals(false, dupResult.success)
+    assertEquals(true, dupResult.isDuplicate)
+    assertEquals(409, dupResult.httpStatusCode)
+    assertTrue(dupResult.message.contains("HTTP 409 (23505)"))
+
+    // 4. Token and key redaction check
+    val leaked = "Authorization: Bearer $token failed with apikey sb_publishable_secret123"
+    val sanitized = com.example.data.SupabasePaymentService.sanitizeSafeErrorText(leaked)
+    assertEquals(false, sanitized.contains("mock-signature"))
+    assertEquals(false, sanitized.contains("sb_publishable_secret123"))
+    assertTrue(sanitized.contains("[REDACTED]"))
+    assertTrue(sanitized.contains("[KEY_REDACTED]"))
+  }
+
+  @Test
+  fun `SupabaseAuth derives userId from JWT sub claim consistently`() {
+    val jwtSub = "jwt-sub-uuid-999"
+    val jwt = buildMockJwt(sub = jwtSub)
+    val authClient = mockLicenseClient { req ->
+      jsonHttpResponse(
+        req,
+        200,
+        """{"access_token":"$jwt","refresh_token":"refresh-123","user":{"id":"stale-user-id"}}""",
+      )
+    }
+    val auth = com.example.data.SupabaseAuth(authClient)
+    val res = auth.login("shop@example.com", "secret123")
+    assertEquals(true, res.success)
+    assertEquals(jwtSub, res.userId)
+  }
 }

@@ -413,7 +413,15 @@ val paymentErrorMessage: StateFlow<String?> = _paymentErrorMessage.asStateFlow()
         userId = userId,
         preserveExistingAccessWhileChecking = _licenseState.value.hasActiveLicense,
       )
-      fetchPaymentRequestsInternal(savedAccess, savedRefresh, userId)
+      val latestAccess = withContext(Dispatchers.IO) { supabaseSession.getAccessToken() } ?: savedAccess
+      val latestRefresh = withContext(Dispatchers.IO) { supabaseSession.getRefreshToken() } ?: savedRefresh
+      val latestUserId = (_authUserId.value ?: userId)
+      fetchPaymentRequestsInternal(
+        accessToken = latestAccess,
+        refreshToken = latestRefresh,
+        userId = latestUserId,
+        clearExistingError = false,
+      )
     }
   }
 
@@ -708,10 +716,13 @@ val paymentErrorMessage: StateFlow<String?> = _paymentErrorMessage.asStateFlow()
     accessToken: String,
     refreshToken: String?,
     userId: String,
+    clearExistingError: Boolean = true,
   ) {
     if (_isPaymentStatusLoading.value) return
     _isPaymentStatusLoading.value = true
-    _paymentErrorMessage.value = null
+    if (clearExistingError) {
+      _paymentErrorMessage.value = null
+    }
 
     try {
       var result =
@@ -786,7 +797,7 @@ val paymentErrorMessage: StateFlow<String?> = _paymentErrorMessage.asStateFlow()
     _isPaymentSubmitting.value = true
     viewModelScope.launch {
       try {
-        val (accessToken, refreshToken, savedUserId) =
+        val (savedAccess, savedRefresh, savedUserId) =
           withContext(Dispatchers.IO) {
             Triple(
               supabaseSession.getAccessToken(),
@@ -794,9 +805,38 @@ val paymentErrorMessage: StateFlow<String?> = _paymentErrorMessage.asStateFlow()
               supabaseSession.getUserId(),
             )
           }
-        val userId = (_authUserId.value ?: savedUserId).orEmpty()
 
-        if (!_isAuthenticated.value || accessToken.isNullOrBlank() || userId.isBlank()) {
+        var effectiveAccess = savedAccess
+        var effectiveRefresh = savedRefresh
+        var effectiveUserId = (_authUserId.value ?: savedUserId).orEmpty().trim()
+
+        // Recover session via refresh token if access token or userId was lost/unavailable
+        if ((effectiveAccess.isNullOrBlank() || effectiveUserId.isBlank()) && !effectiveRefresh.isNullOrBlank()) {
+          val refreshed = withContext(Dispatchers.IO) { supabaseAuth.refreshSession(effectiveRefresh) }
+          if (refreshed.success && !refreshed.accessToken.isNullOrBlank() && !refreshed.userId.isNullOrBlank()) {
+            val nextRefresh = refreshed.refreshToken ?: effectiveRefresh
+            withContext(Dispatchers.IO) {
+              supabaseSession.saveSession(refreshed.accessToken, nextRefresh, refreshed.userId)
+            }
+            effectiveAccess = refreshed.accessToken
+            effectiveRefresh = nextRefresh
+            effectiveUserId = refreshed.userId
+            _authUserId.value = refreshed.userId
+            _isAuthenticated.value = true
+          } else if (refreshed.isNetworkError) {
+            _paymentErrorMessage.value =
+              "Network error while refreshing session (${refreshed.message}). Please try again."
+            return@launch
+          }
+        }
+
+        if (!_isAuthenticated.value || effectiveAccess.isNullOrBlank() || effectiveUserId.isBlank()) {
+          if (effectiveAccess.isNullOrBlank() && effectiveRefresh.isNullOrBlank()) {
+            _authUserId.value = null
+            _isAuthenticated.value = false
+            _licenseState.value =
+              LicenseAccessState(hasActiveLicense = false, status = LicenseStatus.UNAUTHENTICATED)
+          }
           _paymentErrorMessage.value = "Please login to your account before submitting payment."
           return@launch
         }
@@ -804,23 +844,27 @@ val paymentErrorMessage: StateFlow<String?> = _paymentErrorMessage.asStateFlow()
         var result =
           withContext(Dispatchers.IO) {
             supabasePaymentService.submitPaymentRequest(
-              accessToken = accessToken,
-              userId = userId,
+              accessToken = effectiveAccess,
+              userId = effectiveUserId,
               utrInput = cleanUtr,
               customerNote = customerNote,
             )
           }
 
         if (result.isUnauthorized) {
-          if (!refreshToken.isNullOrBlank()) {
-            val refreshed = withContext(Dispatchers.IO) { supabaseAuth.refreshSession(refreshToken) }
+          if (!effectiveRefresh.isNullOrBlank()) {
+            val refreshed = withContext(Dispatchers.IO) { supabaseAuth.refreshSession(effectiveRefresh) }
             if (refreshed.success && !refreshed.accessToken.isNullOrBlank()) {
-              val nextRefresh = refreshed.refreshToken ?: refreshToken
-              val nextUserId = refreshed.userId ?: userId
+              val nextRefresh = refreshed.refreshToken ?: effectiveRefresh
+              val nextUserId = (refreshed.userId ?: effectiveUserId).trim()
               withContext(Dispatchers.IO) {
                 supabaseSession.saveSession(refreshed.accessToken, nextRefresh, nextUserId)
               }
+              effectiveAccess = refreshed.accessToken
+              effectiveRefresh = nextRefresh
+              effectiveUserId = nextUserId
               _authUserId.value = nextUserId
+              _isAuthenticated.value = true
               result =
                 withContext(Dispatchers.IO) {
                   supabasePaymentService.submitPaymentRequest(
@@ -830,35 +874,52 @@ val paymentErrorMessage: StateFlow<String?> = _paymentErrorMessage.asStateFlow()
                     customerNote = customerNote,
                   )
                 }
+            } else if (refreshed.isNetworkError) {
+              _paymentErrorMessage.value =
+                "Network error while refreshing expired session: ${refreshed.message}"
+              return@launch
             } else {
-              _paymentErrorMessage.value = "Your session expired. Please login again."
+              withContext(Dispatchers.IO) { supabaseSession.clearSession() }
+              _authUserId.value = null
+              _isAuthenticated.value = false
+              _licenseState.value =
+                LicenseAccessState(hasActiveLicense = false, status = LicenseStatus.UNAUTHENTICATED)
+              _paymentErrorMessage.value =
+                "Your session expired (${refreshed.message}). Please login again."
               return@launch
             }
           } else {
-            _paymentErrorMessage.value = "Your session expired. Please login again."
+            withContext(Dispatchers.IO) { supabaseSession.clearSession() }
+            _authUserId.value = null
+            _isAuthenticated.value = false
+            _licenseState.value =
+              LicenseAccessState(hasActiveLicense = false, status = LicenseStatus.UNAUTHENTICATED)
+            _paymentErrorMessage.value = result.message
             return@launch
           }
         }
 
-        if (result.success) {
-          val created = result.request
-          if (created != null) {
-            _paymentRequests.value = listOf(created) + _paymentRequests.value.filterNot { it.utr == created.utr }
-          }
+        val confirmedRecord = result.request
+        if (result.success && confirmedRecord != null) {
+          _paymentRequests.value =
+            listOf(confirmedRecord) + _paymentRequests.value.filterNot { it.utr == confirmedRecord.utr }
           _paymentSubmissionMessage.value = "Payment Under Verification"
-          // Refresh list from server cleanly
-          val latestAccess = withContext(Dispatchers.IO) { supabaseSession.getAccessToken() }
-          if (!latestAccess.isNullOrBlank()) {
+          // Refresh list from server cleanly using the active effectiveUserId
+          val latestAccess = withContext(Dispatchers.IO) { supabaseSession.getAccessToken() } ?: effectiveAccess
+          if (!latestAccess.isNullOrBlank() && effectiveUserId.isNotBlank()) {
             val latest =
               withContext(Dispatchers.IO) {
-                supabasePaymentService.fetchUserPaymentRequests(latestAccess, userId)
+                supabasePaymentService.fetchUserPaymentRequests(latestAccess, effectiveUserId)
               }
             if (latest.success) {
               _paymentRequests.value = latest.requests
             }
           }
         } else {
-          _paymentErrorMessage.value = result.message
+          _paymentErrorMessage.value =
+            result.message.ifBlank {
+              "Payment submission was not confirmed by Supabase. Please try again."
+            }
         }
       } catch (e: Exception) {
         _paymentErrorMessage.value = "Submission failed: ${e.message ?: "Unknown error"}"
