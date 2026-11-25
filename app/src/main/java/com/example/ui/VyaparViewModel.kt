@@ -43,6 +43,8 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.example.data.SupabaseAuth
+import com.example.data.SupabaseSession
 
 data class PosCartState(
   val items: List<CartLineInput> = emptyList(),
@@ -90,6 +92,20 @@ class VyaparViewModel(application: Application) : AndroidViewModel(application) 
 
   private val storage = JsonStorageManager(application.applicationContext)
   val repository = VyaparRepository(storage)
+private val supabaseAuth = SupabaseAuth()
+private val supabaseSession = SupabaseSession(application.applicationContext)
+
+private val _isAuthLoading = MutableStateFlow(false)
+val isAuthLoading: StateFlow<Boolean> = _isAuthLoading.asStateFlow()
+
+private val _isAuthenticated = MutableStateFlow(false)
+val isAuthenticated: StateFlow<Boolean> = _isAuthenticated.asStateFlow()
+
+private val _authMessage = MutableStateFlow<String?>(null)
+val authMessage: StateFlow<String?> = _authMessage.asStateFlow()
+
+private val _authUserId = MutableStateFlow<String?>(null)
+val authUserId: StateFlow<String?> = _authUserId.asStateFlow()
 
   val isLoaded: StateFlow<Boolean> = repository.isLoaded
   val business: StateFlow<BusinessProfile> = repository.business
@@ -211,6 +227,90 @@ class VyaparViewModel(application: Application) : AndroidViewModel(application) 
       cm.registerDefaultNetworkCallback(callback)
     }
   }
+fun signUpWithSupabase(email: String, password: String) {
+    if (email.isBlank() || password.isBlank()) {
+        _authMessage.value = "Email and password are required"
+        return
+    }
+
+    viewModelScope.launch {
+        _isAuthLoading.value = true
+        _authMessage.value = null
+
+        try {
+            val result = withContext(Dispatchers.IO) {
+                supabaseAuth.signUp(email, password)
+            }
+
+            if (result.success &&
+                result.accessToken != null &&
+                result.refreshToken != null
+            ) {
+                supabaseSession.saveSession(
+                    result.accessToken,
+                    result.refreshToken
+                )
+                _authUserId.value = result.userId
+                _isAuthenticated.value = true
+            }
+
+            _authMessage.value = result.message
+
+        } catch (e: Exception) {
+            _authMessage.value = "Signup failed: ${e.message}"
+        } finally {
+            _isAuthLoading.value = false
+        }
+    }
+}
+
+fun loginWithSupabase(email: String, password: String) {
+    if (email.isBlank() || password.isBlank()) {
+        _authMessage.value = "Email and password are required"
+        return
+    }
+
+    viewModelScope.launch {
+        _isAuthLoading.value = true
+        _authMessage.value = null
+
+        try {
+            val result = withContext(Dispatchers.IO) {
+                supabaseAuth.login(email, password)
+            }
+
+            if (result.success &&
+                result.accessToken != null &&
+                result.refreshToken != null
+            ) {
+                supabaseSession.saveSession(
+                    result.accessToken,
+                    result.refreshToken
+                )
+                _authUserId.value = result.userId
+                _isAuthenticated.value = true
+            }
+
+            _authMessage.value = result.message
+
+        } catch (e: Exception) {
+            _authMessage.value = "Login failed: ${e.message}"
+        } finally {
+            _isAuthLoading.value = false
+        }
+    }
+}
+
+fun logoutFromSupabase() {
+    supabaseSession.clearSession()
+    _authUserId.value = null
+    _isAuthenticated.value = false
+    _authMessage.value = "Logged out successfully"
+}
+
+fun clearAuthMessage() {
+    _authMessage.value = null
+}
 
   fun clearToast() {
     _toastMessage.value = null
