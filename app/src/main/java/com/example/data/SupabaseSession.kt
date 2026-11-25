@@ -21,24 +21,40 @@ class SupabaseSession(context: Context) {
     companion object {
         private const val ACCESS_TOKEN = "access_token"
         private const val REFRESH_TOKEN = "refresh_token"
+        private const val USER_ID = "user_id"
     }
 
-    fun saveSession(accessToken: String, refreshToken: String) {
-        prefs.edit()
+    fun saveSession(accessToken: String, refreshToken: String, userId: String? = null) {
+        val editor = prefs.edit()
             .putString(ACCESS_TOKEN, encrypt(accessToken))
             .putString(REFRESH_TOKEN, encrypt(refreshToken))
-            .apply()
+        if (!userId.isNullOrBlank()) {
+            editor.putString(USER_ID, encrypt(userId))
+        } else {
+            editor.remove(USER_ID)
+        }
+        editor.apply()
     }
 
     fun getAccessToken(): String? {
-        return prefs.getString(ACCESS_TOKEN, null)?.let {
-            decrypt(it)
-        }
+        return readEncrypted(ACCESS_TOKEN)
     }
 
     fun getRefreshToken(): String? {
-        return prefs.getString(REFRESH_TOKEN, null)?.let {
-            decrypt(it)
+        return readEncrypted(REFRESH_TOKEN)
+    }
+
+    fun getUserId(): String? {
+        return readEncrypted(USER_ID)
+    }
+
+    private fun readEncrypted(key: String): String? {
+        val raw = prefs.getString(key, null) ?: return null
+        return try {
+            decrypt(raw)
+        } catch (_: Exception) {
+            clearSession()
+            null
         }
     }
 

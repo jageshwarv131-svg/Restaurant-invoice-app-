@@ -131,11 +131,15 @@ import com.example.ui.theme.VyaparBillingTheme
 import com.example.util.CurrencyUtils
 import java.io.File
 import kotlinx.coroutines.launch
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.TextButton
 import androidx.compose.material.icons.filled.AccountCircle
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 enum class BottomTab(
   val label: String,
   val selectedIcon: ImageVector,
@@ -1219,6 +1223,8 @@ private fun AuthAccountScreen(
     onLogout: () -> Unit,
     onBack: () -> Unit,
 ) {
+    BackHandler(enabled = !isLoading, onBack = onBack)
+
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var createAccount by remember { mutableStateOf(false) }
@@ -1229,6 +1235,9 @@ private fun AuthAccountScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(palette.background)
+            .statusBarsPadding()
+            .navigationBarsPadding()
+            .imePadding()
             .verticalScroll(rememberScrollState())
             .padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
@@ -1286,6 +1295,7 @@ private fun AuthAccountScreen(
                 onValueChange = { email = it },
                 label = { Text("Email Address") },
                 singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
                 modifier = Modifier.fillMaxWidth(),
                 enabled = !isLoading,
             )
@@ -1295,6 +1305,8 @@ private fun AuthAccountScreen(
                 onValueChange = { password = it },
                 label = { Text("Password") },
                 singleLine = true,
+                visualTransformation = PasswordVisualTransformation(),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                 modifier = Modifier.fillMaxWidth(),
                 enabled = !isLoading,
             )

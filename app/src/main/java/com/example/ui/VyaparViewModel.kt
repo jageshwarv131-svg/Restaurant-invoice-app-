@@ -196,6 +196,7 @@ val authUserId: StateFlow<String?> = _authUserId.asStateFlow()
         _isUnlocked.value = true
       }
     }
+    restoreSupabaseSession()
     registerNetworkObserver(application)
   }
 
@@ -227,90 +228,159 @@ val authUserId: StateFlow<String?> = _authUserId.asStateFlow()
       cm.registerDefaultNetworkCallback(callback)
     }
   }
-fun signUpWithSupabase(email: String, password: String) {
+  fun restoreSupabaseSession() {
+    viewModelScope.launch {
+      val (savedAccess, savedRefresh, savedUserId) =
+        withContext(Dispatchers.IO) {
+          Triple(
+            supabaseSession.getAccessToken(),
+            supabaseSession.getRefreshToken(),
+            supabaseSession.getUserId(),
+          )
+        }
+
+      if (savedRefresh.isNullOrBlank()) {
+        if (!savedAccess.isNullOrBlank()) {
+          _authUserId.value = savedUserId
+          _isAuthenticated.value = true
+        }
+        return@launch
+      }
+
+      _isAuthLoading.value = true
+      try {
+        val result = withContext(Dispatchers.IO) { supabaseAuth.refreshSession(savedRefresh) }
+        if (result.success && result.accessToken != null) {
+          val nextRefresh = result.refreshToken ?: savedRefresh
+          val nextUserId = result.userId ?: savedUserId
+          withContext(Dispatchers.IO) {
+            supabaseSession.saveSession(result.accessToken, nextRefresh, nextUserId)
+          }
+          _authUserId.value = nextUserId
+          _isAuthenticated.value = true
+        } else if (result.isNetworkError && !savedAccess.isNullOrBlank()) {
+          _authUserId.value = savedUserId
+          _isAuthenticated.value = true
+        } else {
+          withContext(Dispatchers.IO) { supabaseSession.clearSession() }
+          _authUserId.value = null
+          _isAuthenticated.value = false
+        }
+      } catch (_: Exception) {
+        if (!savedAccess.isNullOrBlank()) {
+          _authUserId.value = savedUserId
+          _isAuthenticated.value = true
+        }
+      } finally {
+        _isAuthLoading.value = false
+      }
+    }
+  }
+
+  fun refreshSupabaseSession() {
+    restoreSupabaseSession()
+  }
+
+  fun signUpWithSupabase(email: String, password: String) {
     if (email.isBlank() || password.isBlank()) {
-        _authMessage.value = "Email and password are required"
-        return
+      _authMessage.value = "Email and password are required"
+      return
     }
 
     viewModelScope.launch {
-        _isAuthLoading.value = true
-        _authMessage.value = null
+      _isAuthLoading.value = true
+      _authMessage.value = null
 
-        try {
-            val result = withContext(Dispatchers.IO) {
-                supabaseAuth.signUp(email, password)
-            }
+      try {
+        val result = withContext(Dispatchers.IO) { supabaseAuth.signUp(email, password) }
 
-            if (result.success &&
-                result.accessToken != null &&
-                result.refreshToken != null
-            ) {
-                supabaseSession.saveSession(
-                    result.accessToken,
-                    result.refreshToken
-                )
-                _authUserId.value = result.userId
-                _isAuthenticated.value = true
-            }
-
-            _authMessage.value = result.message
-
-        } catch (e: Exception) {
-            _authMessage.value = "Signup failed: ${e.message}"
-        } finally {
-            _isAuthLoading.value = false
+        if (
+          result.success &&
+            !result.requiresEmailConfirmation &&
+            result.accessToken != null &&
+            result.refreshToken != null
+        ) {
+          withContext(Dispatchers.IO) {
+            supabaseSession.saveSession(result.accessToken, result.refreshToken, result.userId)
+          }
+          _authUserId.value = result.userId
+          _isAuthenticated.value = true
+        } else if (result.requiresEmailConfirmation) {
+          _authUserId.value = null
+          _isAuthenticated.value = false
         }
-    }
-}
 
-fun loginWithSupabase(email: String, password: String) {
+        _authMessage.value = result.message
+      } catch (e: Exception) {
+        _authMessage.value = "Signup failed: ${e.message}"
+      } finally {
+        _isAuthLoading.value = false
+      }
+    }
+  }
+
+  fun loginWithSupabase(email: String, password: String) {
     if (email.isBlank() || password.isBlank()) {
-        _authMessage.value = "Email and password are required"
-        return
+      _authMessage.value = "Email and password are required"
+      return
     }
 
     viewModelScope.launch {
-        _isAuthLoading.value = true
-        _authMessage.value = null
+      _isAuthLoading.value = true
+      _authMessage.value = null
 
-        try {
-            val result = withContext(Dispatchers.IO) {
-                supabaseAuth.login(email, password)
-            }
+      try {
+        val result = withContext(Dispatchers.IO) { supabaseAuth.login(email, password) }
 
-            if (result.success &&
-                result.accessToken != null &&
-                result.refreshToken != null
-            ) {
-                supabaseSession.saveSession(
-                    result.accessToken,
-                    result.refreshToken
-                )
-                _authUserId.value = result.userId
-                _isAuthenticated.value = true
-            }
-
-            _authMessage.value = result.message
-
-        } catch (e: Exception) {
-            _authMessage.value = "Login failed: ${e.message}"
-        } finally {
-            _isAuthLoading.value = false
+        if (result.success && result.accessToken != null && result.refreshToken != null) {
+          withContext(Dispatchers.IO) {
+            supabaseSession.saveSession(result.accessToken, result.refreshToken, result.userId)
+          }
+          _authUserId.value = result.userId
+          _isAuthenticated.value = true
         }
+
+        _authMessage.value = result.message
+      } catch (e: Exception) {
+        _authMessage.value = "Login failed: ${e.message}"
+      } finally {
+        _isAuthLoading.value = false
+      }
     }
-}
+  }
 
-fun logoutFromSupabase() {
-    supabaseSession.clearSession()
-    _authUserId.value = null
-    _isAuthenticated.value = false
-    _authMessage.value = "Logged out successfully"
-}
+  fun logoutFromSupabase() {
+    viewModelScope.launch {
+      _isAuthLoading.value = true
+      try {
+        withContext(Dispatchers.IO) {
+          val accessToken = supabaseSession.getAccessToken()
+          val refreshToken = supabaseSession.getRefreshToken()
+          if (!accessToken.isNullOrBlank()) {
+            val loggedOut = supabaseAuth.logout(accessToken)
+            if (!loggedOut && !refreshToken.isNullOrBlank()) {
+              val refreshed = supabaseAuth.refreshSession(refreshToken)
+              if (refreshed.success && !refreshed.accessToken.isNullOrBlank()) {
+                supabaseAuth.logout(refreshed.accessToken)
+              }
+            }
+          }
+        }
+      } catch (_: Exception) {
+        // Proceed to clear local session even when offline or logout request fails
+      } finally {
+        withContext(Dispatchers.IO) { supabaseSession.clearSession() }
+        _authUserId.value = null
+        _isAuthenticated.value = false
+        _authMessage.value = "Logged out successfully"
+        _isAuthLoading.value = false
+      }
+    }
+  }
 
-fun clearAuthMessage() {
+  fun clearAuthMessage() {
     _authMessage.value = null
-}
+  }
 
   fun clearToast() {
     _toastMessage.value = null
