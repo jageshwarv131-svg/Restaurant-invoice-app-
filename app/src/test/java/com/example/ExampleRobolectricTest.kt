@@ -428,7 +428,7 @@ class ExampleRobolectricTest {
       )
     assertEquals("user-uuid-123", payload.getString("user_id"))
     assertEquals(499, payload.getInt("amount_inr"))
-    assertEquals("UPI", payload.getString("payment_method"))
+    assertEquals("phonepe", payload.getString("payment_method"))
     assertEquals("432912345678", payload.getString("utr"))
     assertEquals("pending", payload.getString("status"))
     assertEquals("Main Market Shop", payload.getString("customer_note"))
@@ -453,7 +453,7 @@ class ExampleRobolectricTest {
           .put("id", "req_1")
           .put("user_id", "user-uuid-123")
           .put("amount_inr", 499)
-          .put("payment_method", "UPI")
+          .put("payment_method", "phonepe")
           .put("utr", "432912345678")
           .put("status", "approved")
           .put("customer_note", "Verified")
@@ -697,7 +697,7 @@ class ExampleRobolectricTest {
       jsonHttpResponse(
         req,
         201,
-        """[{"id":"pay_987","user_id":"$userId","amount_inr":499,"payment_method":"UPI","utr":"987654321012","status":"pending","customer_note":"Shop A","created_at":"2026-11-25T11:00:00Z"}]""",
+        """[{"id":"pay_987","user_id":"$userId","amount_inr":499,"payment_method":"phonepe","utr":"987654321012","status":"pending","customer_note":"Shop A","created_at":"2026-11-25T11:00:00Z"}]""",
       )
     }
 
@@ -723,7 +723,7 @@ class ExampleRobolectricTest {
     val sentJson = org.json.JSONObject(capturedBodyText!!)
     assertEquals(userId, sentJson.getString("user_id"))
     assertEquals(499, sentJson.getInt("amount_inr"))
-    assertEquals("UPI", sentJson.getString("payment_method"))
+    assertEquals("phonepe", sentJson.getString("payment_method"))
     assertEquals("987654321012", sentJson.getString("utr"))
     assertEquals("pending", sentJson.getString("status"))
     assertEquals("Shop A", sentJson.getString("customer_note"))

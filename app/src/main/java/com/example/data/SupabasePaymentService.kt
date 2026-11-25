@@ -33,7 +33,7 @@ data class PaymentRequestRecord(
     val id: String = "",
     val userId: String = "",
     val amountInr: Int = SupabasePaymentService.LICENSE_AMOUNT_INR,
-    val paymentMethod: String = SupabasePaymentService.PAYMENT_METHOD_UPI,
+    val paymentMethod: String = SupabasePaymentService.PAYMENT_METHOD_PHONEPE,
     val utr: String = "",
     val status: PaymentRequestStatus = PaymentRequestStatus.PENDING,
     val customerNote: String = "",
@@ -69,6 +69,7 @@ class SupabasePaymentService(
         const val LICENSE_AMOUNT_INR = 499
         const val PHONEPE_UPI_ID = "7880023755@axl"
         const val PAYMENT_METHOD_UPI = "UPI"
+        const val PAYMENT_METHOD_PHONEPE = "phonepe"
         const val STATUS_PENDING = "pending"
         const val PAYMENT_REQUESTS_PATH = "/rest/v1/payment_requests"
 
@@ -132,7 +133,7 @@ class SupabasePaymentService(
             return JSONObject()
                 .put("user_id", userId.trim())
                 .put("amount_inr", LICENSE_AMOUNT_INR)
-                .put("payment_method", PAYMENT_METHOD_UPI)
+                .put("payment_method", PAYMENT_METHOD_PHONEPE)
                 .put("utr", sanitizeUtr(utr))
                 .put("status", STATUS_PENDING)
                 .put("customer_note", customerNote.trim())
@@ -143,7 +144,7 @@ class SupabasePaymentService(
                 id = json.optString("id"),
                 userId = json.optString("user_id"),
                 amountInr = json.optInt("amount_inr", LICENSE_AMOUNT_INR),
-                paymentMethod = json.optString("payment_method", PAYMENT_METHOD_UPI),
+                paymentMethod = json.optString("payment_method", PAYMENT_METHOD_PHONEPE),
                 utr = json.optString("utr"),
                 status = PaymentRequestStatus.fromApi(json.optString("status")),
                 customerNote = json.optString("customer_note"),
