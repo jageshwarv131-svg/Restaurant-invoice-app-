@@ -131,7 +131,11 @@ import com.example.ui.theme.VyaparBillingTheme
 import com.example.util.CurrencyUtils
 import java.io.File
 import kotlinx.coroutines.launch
-
+import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.TextButton
+import androidx.compose.material.icons.filled.AccountCircle
 enum class BottomTab(
   val label: String,
   val selectedIcon: ImageVector,
@@ -156,6 +160,7 @@ enum class SubScreen {
   INVOICE_SETTINGS,
   BACKUP_RESTORE,
   HELP,
+  ACCOUNT,
 }
 
 private enum class AppStage {
@@ -184,7 +189,10 @@ fun VyaparBillingApp(vm: VyaparViewModel = viewModel()) {
   val activeInvoice by vm.activePreviewInvoice.collectAsStateWithLifecycle()
   val activePdf by vm.activePreviewPdf.collectAsStateWithLifecycle()
   val toastMessage by vm.toastMessage.collectAsStateWithLifecycle()
-
+val isAuthLoading by vm.isAuthLoading.collectAsStateWithLifecycle()
+val isAuthenticated by vm.isAuthenticated.collectAsStateWithLifecycle()
+val authMessage by vm.authMessage.collectAsStateWithLifecycle()
+  
   var showSplash by remember { mutableStateOf(true) }
   var currentTab by remember { mutableStateOf(BottomTab.HOME) }
   val backStack = remember { mutableStateListOf<SubScreen>() }
@@ -447,6 +455,13 @@ fun VyaparBillingApp(vm: VyaparViewModel = viewModel()) {
                         selected = activeSubScreen == SubScreen.HELP,
                         onClick = { navFromDrawer(sub = SubScreen.HELP) },
                       )
+                      DrawerItem3D(
+    label = "My Account & License",
+    icon = Icons.Filled.AccountCircle,
+    tone = ClayTones.Green,
+    selected = activeSubScreen == SubScreen.ACCOUNT,
+    onClick = { navFromDrawer(sub = SubScreen.ACCOUNT) },
+)
                       Spacer(Modifier.height(14.dp))
                     }
                   }
@@ -631,13 +646,35 @@ fun VyaparBillingApp(vm: VyaparViewModel = viewModel()) {
                       onShowToast = { vm.showToast(it) },
                     )
                   }
-                  SubScreen.HELP -> {
+                                    SubScreen.HELP -> {
                     HelpSupportScreen(
                       isShopOpen = isShopOpen,
                       onToggleShopStatus = { vm.toggleShopOpen() },
                       onBack = { popSubScreen() },
                     )
                   }
+
+                  SubScreen.ACCOUNT -> {
+                    AuthAccountScreen(
+                      isLoading = isAuthLoading,
+                      isAuthenticated = isAuthenticated,
+                      authMessage = authMessage,
+                      onSignUp = { email, password ->
+                        vm.signUpWithSupabase(email, password)
+                      },
+                      onLogin = { email, password ->
+                        vm.loginWithSupabase(email, password)
+                      },
+                      onLogout = {
+                        vm.logoutFromSupabase()
+                      },
+                      onBack = {
+                        vm.clearAuthMessage()
+                        popSubScreen()
+                      },
+                    )
+                  }
+
                   SubScreen.NONE -> {
                     val topTitle =
                       when (currentTab) {
@@ -1170,4 +1207,136 @@ private fun ClayNavigationRail(
       }
     }
   }
+}
+
+@Composable
+private fun AuthAccountScreen(
+    isLoading: Boolean,
+    isAuthenticated: Boolean,
+    authMessage: String?,
+    onSignUp: (String, String) -> Unit,
+    onLogin: (String, String) -> Unit,
+    onLogout: () -> Unit,
+    onBack: () -> Unit,
+) {
+    var email by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
+    var createAccount by remember { mutableStateOf(false) }
+
+    val palette = LocalVyaparClayPalette.current
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(palette.background)
+            .verticalScroll(rememberScrollState())
+            .padding(20.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        TextButton(onClick = onBack) {
+            Text("← Back")
+        }
+
+        Text(
+            text = "My Account & License",
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.ExtraBold,
+            color = palette.textPrimary,
+        )
+
+        if (isAuthenticated) {
+            Card3D(
+                modifier = Modifier.fillMaxWidth(),
+                cornerRadius = 20.dp,
+                shadowDepth = 4.dp,
+                contentPadding = PaddingValues(18.dp),
+            ) {
+                Text(
+                    text = "Account Login Successful",
+                    fontWeight = FontWeight.ExtraBold,
+                    color = palette.textPrimary,
+                )
+
+                Spacer(Modifier.height(8.dp))
+
+                Text(
+                    text = "Your account is connected.",
+                    color = palette.textSecondary,
+                )
+
+                Spacer(Modifier.height(14.dp))
+
+                Button(
+                    onClick = onLogout,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text("Logout")
+                }
+            }
+        } else {
+            Text(
+                text = if (createAccount) "Create New Account" else "Login to Your Account",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                color = palette.textPrimary,
+            )
+
+            OutlinedTextField(
+                value = email,
+                onValueChange = { email = it },
+                label = { Text("Email Address") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+                enabled = !isLoading,
+            )
+
+            OutlinedTextField(
+                value = password,
+                onValueChange = { password = it },
+                label = { Text("Password") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+                enabled = !isLoading,
+            )
+
+            Button(
+                onClick = {
+                    if (createAccount) {
+                        onSignUp(email.trim(), password)
+                    } else {
+                        onLogin(email.trim(), password)
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(),
+                enabled = !isLoading,
+            ) {
+                if (isLoading) {
+                    CircularProgressIndicator()
+                } else {
+                    Text(if (createAccount) "Create Account" else "Login")
+                }
+            }
+
+            TextButton(
+                onClick = { createAccount = !createAccount },
+                enabled = !isLoading,
+            ) {
+                Text(
+                    if (createAccount) {
+                        "Already have an account? Login"
+                    } else {
+                        "New user? Create Account"
+                    }
+                )
+            }
+        }
+
+        if (!authMessage.isNullOrBlank()) {
+            Text(
+                text = authMessage,
+                color = palette.textPrimary,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        }
+    }
 }
