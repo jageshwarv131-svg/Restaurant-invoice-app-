@@ -131,6 +131,11 @@ import com.example.ui.theme.VyaparBillingTheme
 import com.example.util.CurrencyUtils
 import java.io.File
 import kotlinx.coroutines.launch
+import com.example.data.PaymentRequestRecord
+import com.example.data.PaymentRequestStatus
+import com.example.ui.screens.LifetimeLicensePaymentScreen
+import com.example.ui.theme.AmberGold
+import com.example.ui.theme.EmeraldGreen
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
@@ -165,6 +170,7 @@ enum class SubScreen {
   BACKUP_RESTORE,
   HELP,
   ACCOUNT,
+  LIFETIME_LICENSE,
 }
 
 private enum class AppStage {
@@ -196,6 +202,11 @@ fun VyaparBillingApp(vm: VyaparViewModel = viewModel()) {
 val isAuthLoading by vm.isAuthLoading.collectAsStateWithLifecycle()
 val isAuthenticated by vm.isAuthenticated.collectAsStateWithLifecycle()
 val authMessage by vm.authMessage.collectAsStateWithLifecycle()
+val isPaymentSubmitting by vm.isPaymentSubmitting.collectAsStateWithLifecycle()
+val isPaymentStatusLoading by vm.isPaymentStatusLoading.collectAsStateWithLifecycle()
+val paymentRequests by vm.paymentRequests.collectAsStateWithLifecycle()
+val paymentSubmissionMessage by vm.paymentSubmissionMessage.collectAsStateWithLifecycle()
+val paymentErrorMessage by vm.paymentErrorMessage.collectAsStateWithLifecycle()
   
   var showSplash by remember { mutableStateOf(true) }
   var currentTab by remember { mutableStateOf(BottomTab.HOME) }
@@ -663,17 +674,41 @@ val authMessage by vm.authMessage.collectAsStateWithLifecycle()
                       isLoading = isAuthLoading,
                       isAuthenticated = isAuthenticated,
                       authMessage = authMessage,
+                      paymentRequests = paymentRequests,
                       onSignUp = { email, password ->
                         vm.signUpWithSupabase(email, password)
                       },
                       onLogin = { email, password ->
                         vm.loginWithSupabase(email, password)
                       },
+                      onOpenLifetimeLicense = {
+                        vm.clearPaymentFeedback()
+                        pushSubScreen(SubScreen.LIFETIME_LICENSE)
+                      },
                       onLogout = {
                         vm.logoutFromSupabase()
                       },
                       onBack = {
                         vm.clearAuthMessage()
+                        popSubScreen()
+                      },
+                    )
+                  }
+
+                  SubScreen.LIFETIME_LICENSE -> {
+                    LifetimeLicensePaymentScreen(
+                      isSubmitting = isPaymentSubmitting,
+                      isStatusLoading = isPaymentStatusLoading,
+                      paymentRequests = paymentRequests,
+                      submissionMessage = paymentSubmissionMessage,
+                      errorMessage = paymentErrorMessage,
+                      onRefreshStatus = { vm.fetchPaymentRequests() },
+                      onSubmitPayment = { utr, note ->
+                        vm.submitLifetimeLicensePayment(utr, note)
+                      },
+                      onShowToast = { vm.showToast(it) },
+                      onBack = {
+                        vm.clearPaymentFeedback()
                         popSubScreen()
                       },
                     )
@@ -1218,8 +1253,10 @@ private fun AuthAccountScreen(
     isLoading: Boolean,
     isAuthenticated: Boolean,
     authMessage: String?,
+    paymentRequests: List<PaymentRequestRecord>,
     onSignUp: (String, String) -> Unit,
     onLogin: (String, String) -> Unit,
+    onOpenLifetimeLicense: () -> Unit,
     onLogout: () -> Unit,
     onBack: () -> Unit,
 ) {
@@ -1254,6 +1291,22 @@ private fun AuthAccountScreen(
         )
 
         if (isAuthenticated) {
+            val approvedReq = paymentRequests.firstOrNull { it.status == PaymentRequestStatus.APPROVED }
+            val pendingReq = paymentRequests.firstOrNull { it.status == PaymentRequestStatus.PENDING }
+            val rejectedReq = paymentRequests.firstOrNull { it.status == PaymentRequestStatus.REJECTED }
+            val licenseStatusText = when {
+                approvedReq != null -> "Lifetime License Active (Approved)"
+                pendingReq != null -> "Payment Under Verification (Pending)"
+                rejectedReq != null -> "Last Request Rejected — Resubmit Required"
+                else -> "Standard Plan • Upgrade for ₹499"
+            }
+            val licenseStatusColor = when {
+                approvedReq != null -> EmeraldGreen
+                pendingReq != null -> AmberGold
+                rejectedReq != null -> com.example.ui.theme.AlertRed
+                else -> SaffronOrange
+            }
+
             Card3D(
                 modifier = Modifier.fillMaxWidth(),
                 cornerRadius = 20.dp,
@@ -1266,14 +1319,39 @@ private fun AuthAccountScreen(
                     color = palette.textPrimary,
                 )
 
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(6.dp))
 
                 Text(
                     text = "Your account is connected.",
                     color = palette.textSecondary,
                 )
 
+                Spacer(Modifier.height(10.dp))
+
+                Text(
+                    text = "License Status: $licenseStatusText",
+                    fontWeight = FontWeight.Bold,
+                    color = licenseStatusColor,
+                )
+
                 Spacer(Modifier.height(14.dp))
+
+                Button3D(
+                    onClick = onOpenLifetimeLicense,
+                    tone = ClayTones.Orange,
+                    cornerRadius = 16.dp,
+                    modifier = Modifier.fillMaxWidth().testTag("open_lifetime_license_btn"),
+                ) {
+                    Text(
+                        text =
+                            if (approvedReq != null) "View Lifetime License"
+                            else "Activate Lifetime License (₹499)",
+                        color = Color.White,
+                        fontWeight = FontWeight.ExtraBold,
+                    )
+                }
+
+                Spacer(Modifier.height(10.dp))
 
                 Button(
                     onClick = onLogout,
@@ -1288,6 +1366,12 @@ private fun AuthAccountScreen(
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
                 color = palette.textPrimary,
+            )
+
+            Text(
+                text = "Login or create an account to submit payment and activate your ₹499 Lifetime License.",
+                style = MaterialTheme.typography.bodySmall,
+                color = palette.textSecondary,
             )
 
             OutlinedTextField(

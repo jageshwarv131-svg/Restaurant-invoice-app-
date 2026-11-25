@@ -43,7 +43,10 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.example.data.PaymentRequestRecord
+import com.example.data.PaymentRequestStatus
 import com.example.data.SupabaseAuth
+import com.example.data.SupabasePaymentService
 import com.example.data.SupabaseSession
 
 data class PosCartState(
@@ -94,6 +97,7 @@ class VyaparViewModel(application: Application) : AndroidViewModel(application) 
   val repository = VyaparRepository(storage)
 private val supabaseAuth = SupabaseAuth()
 private val supabaseSession = SupabaseSession(application.applicationContext)
+private val supabasePaymentService = SupabasePaymentService()
 
 private val _isAuthLoading = MutableStateFlow(false)
 val isAuthLoading: StateFlow<Boolean> = _isAuthLoading.asStateFlow()
@@ -106,6 +110,21 @@ val authMessage: StateFlow<String?> = _authMessage.asStateFlow()
 
 private val _authUserId = MutableStateFlow<String?>(null)
 val authUserId: StateFlow<String?> = _authUserId.asStateFlow()
+
+private val _isPaymentSubmitting = MutableStateFlow(false)
+val isPaymentSubmitting: StateFlow<Boolean> = _isPaymentSubmitting.asStateFlow()
+
+private val _isPaymentStatusLoading = MutableStateFlow(false)
+val isPaymentStatusLoading: StateFlow<Boolean> = _isPaymentStatusLoading.asStateFlow()
+
+private val _paymentRequests = MutableStateFlow<List<PaymentRequestRecord>>(emptyList())
+val paymentRequests: StateFlow<List<PaymentRequestRecord>> = _paymentRequests.asStateFlow()
+
+private val _paymentSubmissionMessage = MutableStateFlow<String?>(null)
+val paymentSubmissionMessage: StateFlow<String?> = _paymentSubmissionMessage.asStateFlow()
+
+private val _paymentErrorMessage = MutableStateFlow<String?>(null)
+val paymentErrorMessage: StateFlow<String?> = _paymentErrorMessage.asStateFlow()
 
   val isLoaded: StateFlow<Boolean> = repository.isLoaded
   val business: StateFlow<BusinessProfile> = repository.business
@@ -243,6 +262,7 @@ val authUserId: StateFlow<String?> = _authUserId.asStateFlow()
         if (!savedAccess.isNullOrBlank()) {
           _authUserId.value = savedUserId
           _isAuthenticated.value = true
+          fetchPaymentRequests()
         }
         return@launch
       }
@@ -258,6 +278,7 @@ val authUserId: StateFlow<String?> = _authUserId.asStateFlow()
           }
           _authUserId.value = nextUserId
           _isAuthenticated.value = true
+          fetchPaymentRequests()
         } else if (result.isNetworkError && !savedAccess.isNullOrBlank()) {
           _authUserId.value = savedUserId
           _isAuthenticated.value = true
@@ -265,6 +286,7 @@ val authUserId: StateFlow<String?> = _authUserId.asStateFlow()
           withContext(Dispatchers.IO) { supabaseSession.clearSession() }
           _authUserId.value = null
           _isAuthenticated.value = false
+          _paymentRequests.value = emptyList()
         }
       } catch (_: Exception) {
         if (!savedAccess.isNullOrBlank()) {
@@ -305,6 +327,7 @@ val authUserId: StateFlow<String?> = _authUserId.asStateFlow()
           }
           _authUserId.value = result.userId
           _isAuthenticated.value = true
+          fetchPaymentRequests()
         } else if (result.requiresEmailConfirmation) {
           _authUserId.value = null
           _isAuthenticated.value = false
@@ -338,6 +361,7 @@ val authUserId: StateFlow<String?> = _authUserId.asStateFlow()
           }
           _authUserId.value = result.userId
           _isAuthenticated.value = true
+          fetchPaymentRequests()
         }
 
         _authMessage.value = result.message
@@ -372,6 +396,9 @@ val authUserId: StateFlow<String?> = _authUserId.asStateFlow()
         withContext(Dispatchers.IO) { supabaseSession.clearSession() }
         _authUserId.value = null
         _isAuthenticated.value = false
+        _paymentRequests.value = emptyList()
+        _paymentSubmissionMessage.value = null
+        _paymentErrorMessage.value = null
         _authMessage.value = "Logged out successfully"
         _isAuthLoading.value = false
       }
@@ -380,6 +407,182 @@ val authUserId: StateFlow<String?> = _authUserId.asStateFlow()
 
   fun clearAuthMessage() {
     _authMessage.value = null
+  }
+
+  fun clearPaymentFeedback() {
+    _paymentSubmissionMessage.value = null
+    _paymentErrorMessage.value = null
+  }
+
+  fun fetchPaymentRequests() {
+    if (_isPaymentStatusLoading.value) return
+    viewModelScope.launch {
+      _isPaymentStatusLoading.value = true
+      _paymentErrorMessage.value = null
+
+      try {
+        val (accessToken, refreshToken, savedUserId) =
+          withContext(Dispatchers.IO) {
+            Triple(
+              supabaseSession.getAccessToken(),
+              supabaseSession.getRefreshToken(),
+              supabaseSession.getUserId(),
+            )
+          }
+        val userId = (_authUserId.value ?: savedUserId).orEmpty()
+        if (accessToken.isNullOrBlank() || userId.isBlank()) {
+          return@launch
+        }
+
+        var result =
+          withContext(Dispatchers.IO) {
+            supabasePaymentService.fetchUserPaymentRequests(accessToken, userId)
+          }
+
+        if (result.isUnauthorized && !refreshToken.isNullOrBlank()) {
+          val refreshed = withContext(Dispatchers.IO) { supabaseAuth.refreshSession(refreshToken) }
+          if (refreshed.success && !refreshed.accessToken.isNullOrBlank()) {
+            val nextRefresh = refreshed.refreshToken ?: refreshToken
+            val nextUserId = refreshed.userId ?: userId
+            withContext(Dispatchers.IO) {
+              supabaseSession.saveSession(refreshed.accessToken, nextRefresh, nextUserId)
+            }
+            _authUserId.value = nextUserId
+            result =
+              withContext(Dispatchers.IO) {
+                supabasePaymentService.fetchUserPaymentRequests(refreshed.accessToken, nextUserId)
+              }
+          }
+        }
+
+        if (result.success) {
+          _paymentRequests.value = result.requests
+          if (result.requests.none { it.status == PaymentRequestStatus.PENDING }) {
+            _paymentSubmissionMessage.value = null
+          }
+        } else if (!result.message.isNullOrBlank()) {
+          _paymentErrorMessage.value = result.message
+        }
+      } catch (e: Exception) {
+        _paymentErrorMessage.value = "Failed to load payment status: ${e.message ?: "Unknown error"}"
+      } finally {
+        _isPaymentStatusLoading.value = false
+      }
+    }
+  }
+
+  fun submitLifetimeLicensePayment(utrInput: String, customerNote: String) {
+    // Duplicate-submit protection while request is already in progress
+    if (_isPaymentSubmitting.value) return
+
+    _paymentErrorMessage.value = null
+    _paymentSubmissionMessage.value = null
+
+    val utrError = SupabasePaymentService.validateUtr(utrInput)
+    if (utrError != null) {
+      _paymentErrorMessage.value = utrError
+      return
+    }
+
+    val cleanUtr = SupabasePaymentService.sanitizeUtr(utrInput)
+    val existing = _paymentRequests.value
+    if (existing.any { it.status == PaymentRequestStatus.APPROVED }) {
+      _paymentErrorMessage.value = "Your Lifetime License is already approved and active."
+      return
+    }
+    if (existing.any { it.status == PaymentRequestStatus.PENDING }) {
+      _paymentErrorMessage.value =
+        "A payment request is already pending verification. Duplicate submissions are disabled."
+      return
+    }
+    if (existing.any { it.utr.equals(cleanUtr, ignoreCase = true) }) {
+      _paymentErrorMessage.value = "This UTR has already been submitted."
+      return
+    }
+
+    _isPaymentSubmitting.value = true
+    viewModelScope.launch {
+      try {
+        val (accessToken, refreshToken, savedUserId) =
+          withContext(Dispatchers.IO) {
+            Triple(
+              supabaseSession.getAccessToken(),
+              supabaseSession.getRefreshToken(),
+              supabaseSession.getUserId(),
+            )
+          }
+        val userId = (_authUserId.value ?: savedUserId).orEmpty()
+
+        if (!_isAuthenticated.value || accessToken.isNullOrBlank() || userId.isBlank()) {
+          _paymentErrorMessage.value = "Please login to your account before submitting payment."
+          return@launch
+        }
+
+        var result =
+          withContext(Dispatchers.IO) {
+            supabasePaymentService.submitPaymentRequest(
+              accessToken = accessToken,
+              userId = userId,
+              utrInput = cleanUtr,
+              customerNote = customerNote,
+            )
+          }
+
+        if (result.isUnauthorized) {
+          if (!refreshToken.isNullOrBlank()) {
+            val refreshed = withContext(Dispatchers.IO) { supabaseAuth.refreshSession(refreshToken) }
+            if (refreshed.success && !refreshed.accessToken.isNullOrBlank()) {
+              val nextRefresh = refreshed.refreshToken ?: refreshToken
+              val nextUserId = refreshed.userId ?: userId
+              withContext(Dispatchers.IO) {
+                supabaseSession.saveSession(refreshed.accessToken, nextRefresh, nextUserId)
+              }
+              _authUserId.value = nextUserId
+              result =
+                withContext(Dispatchers.IO) {
+                  supabasePaymentService.submitPaymentRequest(
+                    accessToken = refreshed.accessToken,
+                    userId = nextUserId,
+                    utrInput = cleanUtr,
+                    customerNote = customerNote,
+                  )
+                }
+            } else {
+              _paymentErrorMessage.value = "Your session expired. Please login again."
+              return@launch
+            }
+          } else {
+            _paymentErrorMessage.value = "Your session expired. Please login again."
+            return@launch
+          }
+        }
+
+        if (result.success) {
+          val created = result.request
+          if (created != null) {
+            _paymentRequests.value = listOf(created) + _paymentRequests.value.filterNot { it.utr == created.utr }
+          }
+          _paymentSubmissionMessage.value = "Payment Under Verification"
+          // Refresh list from server cleanly
+          val latestAccess = withContext(Dispatchers.IO) { supabaseSession.getAccessToken() }
+          if (!latestAccess.isNullOrBlank()) {
+            val latest =
+              withContext(Dispatchers.IO) {
+                supabasePaymentService.fetchUserPaymentRequests(latestAccess, userId)
+              }
+            if (latest.success) {
+              _paymentRequests.value = latest.requests
+            }
+          }
+        } else {
+          _paymentErrorMessage.value = result.message
+        }
+      } catch (e: Exception) {
+        _paymentErrorMessage.value = "Submission failed: ${e.message ?: "Unknown error"}"
+      } finally {
+        _isPaymentSubmitting.value = false
+      }
+    }
   }
 
   fun clearToast() {

@@ -400,4 +400,67 @@ class ExampleRobolectricTest {
     assertEquals(ThemePreference.LIGHT, repo3.settings.value.themePreference)
     assertEquals(false, repo3.settings.value.darkMode)
   }
+
+  @Test
+  fun `lifetime license payment validation upi uri payload and status parsing`() {
+    // 1. UTR validation
+    assertTrue(com.example.data.SupabasePaymentService.validateUtr("") != null)
+    assertTrue(com.example.data.SupabasePaymentService.validateUtr("12345") != null)
+    assertTrue(com.example.data.SupabasePaymentService.validateUtr("INVALID UTR!") != null)
+    assertTrue(com.example.data.SupabasePaymentService.validateUtr("ABCDEFGHIJKL") != null)
+    assertEquals(null, com.example.data.SupabasePaymentService.validateUtr(" 432912345678 "))
+    assertEquals(null, com.example.data.SupabasePaymentService.validateUtr("utr202611250091"))
+
+    // 2. UPI payment URI check
+    val uri = com.example.data.SupabasePaymentService.buildUpiPaymentUri()
+    assertEquals("upi", uri.scheme)
+    assertEquals("pay", uri.host)
+    assertEquals("7880023755@axl", uri.getQueryParameter("pa"))
+    assertEquals("499.00", uri.getQueryParameter("am"))
+    assertEquals("INR", uri.getQueryParameter("cu"))
+
+    // 3. Supabase POST payload check (status must always be "pending")
+    val payload =
+      com.example.data.SupabasePaymentService.buildInsertPayload(
+        userId = "user-uuid-123",
+        utr = "  432912345678  ",
+        customerNote = "Main Market Shop",
+      )
+    assertEquals("user-uuid-123", payload.getString("user_id"))
+    assertEquals(499, payload.getInt("amount_inr"))
+    assertEquals("UPI", payload.getString("payment_method"))
+    assertEquals("432912345678", payload.getString("utr"))
+    assertEquals("pending", payload.getString("status"))
+    assertEquals("Main Market Shop", payload.getString("customer_note"))
+
+    // 4. Status parsing (Pending, Approved, Rejected)
+    assertEquals(
+      com.example.data.PaymentRequestStatus.PENDING,
+      com.example.data.PaymentRequestStatus.fromApi("pending"),
+    )
+    assertEquals(
+      com.example.data.PaymentRequestStatus.APPROVED,
+      com.example.data.PaymentRequestStatus.fromApi("approved"),
+    )
+    assertEquals(
+      com.example.data.PaymentRequestStatus.REJECTED,
+      com.example.data.PaymentRequestStatus.fromApi("REJECTED"),
+    )
+
+    val parsed =
+      com.example.data.SupabasePaymentService.parseRecord(
+        org.json.JSONObject()
+          .put("id", "req_1")
+          .put("user_id", "user-uuid-123")
+          .put("amount_inr", 499)
+          .put("payment_method", "UPI")
+          .put("utr", "432912345678")
+          .put("status", "approved")
+          .put("customer_note", "Verified")
+          .put("created_at", "2026-11-25T10:00:00Z")
+      )
+    assertEquals(com.example.data.PaymentRequestStatus.APPROVED, parsed.status)
+    assertEquals(499, parsed.amountInr)
+    assertEquals("432912345678", parsed.utr)
+  }
 }
