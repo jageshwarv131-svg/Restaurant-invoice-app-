@@ -684,6 +684,7 @@ fun BusinessSetupScreen(
   var tagline by remember(existingProfile) { mutableStateOf(existingProfile.tagline) }
   var terms by remember(existingProfile) { mutableStateOf(existingProfile.termsAndConditions) }
   var thankYou by remember(existingProfile) { mutableStateOf(existingProfile.thankYouMessage) }
+  var upiId by remember(existingProfile) { mutableStateOf(existingProfile.upiId) }
   var pickedLogoUri by remember { mutableStateOf<Uri?>(null) }
   var nameError by remember { mutableStateOf(false) }
 
@@ -803,6 +804,7 @@ fun BusinessSetupScreen(
                 tagline = tagline.trim(),
                 termsAndConditions = terms.trim(),
                 thankYouMessage = thankYou.trim(),
+                upiId = upiId.trim(),
               ),
               pickedLogoUri,
             )
@@ -1069,6 +1071,15 @@ fun BusinessSetupScreen(
               onValueChange = { thankYou = it },
               label = "Thank You Message",
               modifier = Modifier.fillMaxWidth(),
+            )
+
+            TextField3D(
+              value = upiId,
+              onValueChange = { upiId = it.trim() },
+              label = "Business UPI ID (Optional, for Invoice QR)",
+              placeholder = "e.g. yourshop@okicici",
+              singleLine = true,
+              modifier = Modifier.fillMaxWidth().testTag("input_business_upi_id"),
             )
           }
         }

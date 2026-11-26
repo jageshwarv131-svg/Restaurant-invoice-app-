@@ -5,6 +5,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -414,6 +415,18 @@ fun InvoiceSettingsScreen(
   onToggleShopStatus: () -> Unit,
   onBack: () -> Unit,
   onSaveInvoiceDefaults: (PaperFormat, GstTaxType, GstTaxMode, Boolean) -> Unit,
+  printerState: com.example.printer.ThermalPrinterUiState? = null,
+  requiredBluetoothPermissions: Array<String> = emptyArray(),
+  onRefreshPrinters: () -> Unit = {},
+  onStartPrinterScan: () -> Unit = {},
+  onStopPrinterScan: () -> Unit = {},
+  onSelectPrinter: (com.example.printer.BluetoothPrinterDevice) -> Unit = {},
+  onPrinterPaperWidthChange: (com.example.printer.ThermalPaperWidth) -> Unit = {},
+  onPrinterAutoCutChange: (Boolean) -> Unit = {},
+  onPrinterLogoChange: (Boolean) -> Unit = {},
+  onPrinterQrChange: (Boolean) -> Unit = {},
+  onConnectPrinter: () -> Unit = {},
+  onDisconnectPrinter: () -> Unit = {},
 ) {
   BackHandler(onBack = onBack)
 
@@ -422,6 +435,7 @@ fun InvoiceSettingsScreen(
   var taxType by remember(settings) { mutableStateOf(settings.defaultTaxType) }
   var taxMode by remember(settings) { mutableStateOf(settings.defaultTaxMode) }
   var autoRound by remember(settings) { mutableStateOf(settings.autoRoundOff) }
+  var showPrinterSheet by remember { mutableStateOf(false) }
 
   Scaffold(
     containerColor = palette.background,
@@ -471,7 +485,10 @@ fun InvoiceSettingsScreen(
       ) {
         Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
           Text("Default PDF Paper Format", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = palette.textPrimary)
-          Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+          Row(
+            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+          ) {
             PaperFormat.entries.forEach { pf ->
               Chip3D(
                 selected = paperFormat == pf,
@@ -517,7 +534,62 @@ fun InvoiceSettingsScreen(
           }
         }
       }
+
+      if (printerState != null) {
+        Card3D(
+          cornerRadius = 24.dp,
+          shadowDepth = 5.dp,
+          contentPadding = PaddingValues(16.dp),
+        ) {
+          Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text(
+              text = "Bluetooth Thermal Printer",
+              style = MaterialTheme.typography.titleSmall,
+              fontWeight = FontWeight.Bold,
+              color = palette.textPrimary,
+            )
+            Text(
+              text =
+                if (printerState.selectedPrinter.hasPrinter) {
+                  "${printerState.selectedPrinter.name} (${printerState.selectedPrinter.paperWidth.label}) • ${printerState.connectionStatus.label}"
+                } else {
+                  "No Bluetooth thermal printer configured yet."
+                },
+              style = MaterialTheme.typography.bodySmall,
+              color = palette.textSecondary,
+            )
+            Button3D(
+              onClick = { showPrinterSheet = true },
+              isPrimary = false,
+              cornerRadius = 16.dp,
+              modifier = Modifier.fillMaxWidth().defaultMinSize(minHeight = 48.dp),
+            ) {
+              Text("Configure Thermal Printer", fontWeight = FontWeight.Bold)
+            }
+          }
+        }
+      }
     }
+  }
+
+  if (showPrinterSheet && printerState != null) {
+    ThermalPrinterPickerSheet(
+      state = printerState,
+      requiredPermissions = requiredBluetoothPermissions,
+      canPrintInvoice = false,
+      onDismiss = { showPrinterSheet = false },
+      onRefreshPrinters = onRefreshPrinters,
+      onStartScan = onStartPrinterScan,
+      onStopScan = onStopPrinterScan,
+      onSelectPrinter = onSelectPrinter,
+      onPaperWidthChange = onPrinterPaperWidthChange,
+      onAutoCutChange = onPrinterAutoCutChange,
+      onPrintLogoChange = onPrinterLogoChange,
+      onPrintUpiQrChange = onPrinterQrChange,
+      onConnect = onConnectPrinter,
+      onDisconnect = onDisconnectPrinter,
+      onPrintNow = {},
+    )
   }
 }
 

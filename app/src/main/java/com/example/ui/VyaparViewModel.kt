@@ -64,6 +64,13 @@ import com.example.data.SupabasePaymentService
 import com.example.data.SupabaseSession
 import com.example.data.SupabaseTrialService
 import com.example.data.TrialStatusResult
+import com.example.printer.AndroidBluetoothPrinterTransport
+import com.example.printer.AndroidBluetoothSystemBridge
+import com.example.printer.BluetoothPrinterDevice
+import com.example.printer.BluetoothPrinterManager
+import com.example.printer.ThermalPaperWidth
+import com.example.printer.ThermalPrinterPrefs
+import com.example.printer.ThermalPrinterUiState
 
 data class PosCartState(
   val items: List<CartLineInput> = emptyList(),
@@ -192,6 +199,15 @@ val paymentErrorMessage: StateFlow<String?> = _paymentErrorMessage.asStateFlow()
 
   private val _toastMessage = MutableStateFlow<String?>(null)
   val toastMessage: StateFlow<String?> = _toastMessage.asStateFlow()
+
+  internal var thermalPrinterManager =
+    BluetoothPrinterManager(
+      prefs = ThermalPrinterPrefs(application.applicationContext),
+      bridge = AndroidBluetoothSystemBridge(application.applicationContext),
+      transport = AndroidBluetoothPrinterTransport(application.applicationContext),
+    )
+  val thermalPrinterState: StateFlow<ThermalPrinterUiState>
+    get() = thermalPrinterManager.state
 
   val dashboardMetrics: StateFlow<DashboardMetrics> =
     combine(products, customers, invoices, expenses, orders) { prods, custs, invs, exps, ords ->
@@ -1612,5 +1628,80 @@ val paymentErrorMessage: StateFlow<String?> = _paymentErrorMessage.asStateFlow()
       repository.restoreFromBackup(bundle)
       showToast("Backup restored successfully")
     }
+  }
+
+  fun thermalPrinterRequiredPermissions(): Array<String> =
+    thermalPrinterManager.requiredRuntimePermissions()
+
+  fun refreshThermalPrinters() {
+    thermalPrinterManager.refreshEnvironmentAndPaired()
+  }
+
+  fun startThermalPrinterScan() {
+    thermalPrinterManager.startDiscovery()
+  }
+
+  fun stopThermalPrinterScan() {
+    thermalPrinterManager.stopDiscovery()
+  }
+
+  fun selectThermalPrinter(device: BluetoothPrinterDevice) {
+    thermalPrinterManager.selectPrinter(device)
+  }
+
+  fun setThermalPaperWidth(width: ThermalPaperWidth) {
+    thermalPrinterManager.updatePaperWidth(width)
+  }
+
+  fun setThermalAutoCut(enabled: Boolean) {
+    thermalPrinterManager.updateAutoCut(enabled)
+  }
+
+  fun setThermalPrintLogo(enabled: Boolean) {
+    thermalPrinterManager.updatePrintLogo(enabled)
+  }
+
+  fun setThermalPrintUpiQr(enabled: Boolean) {
+    thermalPrinterManager.updatePrintUpiQr(enabled)
+  }
+
+  fun connectThermalPrinter() {
+    viewModelScope.launch {
+      val result = thermalPrinterManager.connectSelectedPrinter()
+      result
+        .onSuccess { showToast("Connected to ${thermalPrinterState.value.selectedPrinter.name}") }
+        .onFailure { err -> showToast(err.message ?: "Could not connect to printer") }
+    }
+  }
+
+  fun disconnectThermalPrinter() {
+    viewModelScope.launch {
+      thermalPrinterManager.disconnect()
+      showToast("Thermal printer disconnected")
+    }
+  }
+
+  fun printActiveInvoiceThermal() {
+    val invoice = _activePreviewInvoice.value
+    if (invoice == null) {
+      showToast("No invoice selected for printing")
+      return
+    }
+    viewModelScope.launch {
+      val result =
+        thermalPrinterManager.printInvoice(
+          business = business.value,
+          invoice = invoice,
+          language = settings.value.language,
+        )
+      result
+        .onSuccess { showToast("Printed invoice ${invoice.invoiceNumber}") }
+        .onFailure { err -> showToast(err.message ?: "Thermal printing failed") }
+    }
+  }
+
+  override fun onCleared() {
+    thermalPrinterManager.close()
+    super.onCleared()
   }
 }

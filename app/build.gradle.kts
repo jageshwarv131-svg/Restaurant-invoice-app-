@@ -114,6 +114,7 @@ dependencies {
   implementation(libs.okhttp)
 
   implementation(libs.moshi.kotlin)
+  implementation(libs.zxing.core)
 
   testImplementation(libs.androidx.compose.ui.test.junit4)
   testImplementation(libs.androidx.core)

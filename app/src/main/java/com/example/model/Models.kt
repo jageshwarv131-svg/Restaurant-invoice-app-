@@ -49,6 +49,7 @@ enum class MovementType(val label: String) {
 enum class PaperFormat(val label: String) {
   A4("A4 Invoice"),
   THERMAL_80MM("80mm Receipt"),
+  THERMAL_58MM("58mm Receipt"),
 }
 
 enum class AppLanguage(val code: String, val label: String) {
@@ -83,6 +84,7 @@ data class BusinessProfile(
   val termsAndConditions: String =
     "1. Goods once sold will not be taken back.\n2. Subject to local jurisdiction.",
   val thankYouMessage: String = "Thank you for your business! Visit again!",
+  val upiId: String = "",
   val nextInvoiceNumber: Int = 1,
   val updatedAt: Long = System.currentTimeMillis(),
 )

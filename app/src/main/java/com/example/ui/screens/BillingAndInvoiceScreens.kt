@@ -44,6 +44,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ReceiptLong
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AddShoppingCart
+import androidx.compose.material.icons.filled.Bluetooth
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.LocalShipping
@@ -66,6 +67,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -80,9 +82,14 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.printer.BluetoothPrinterDevice
+import com.example.printer.PrinterConnectionStatus
+import com.example.printer.ThermalPaperWidth
+import com.example.printer.ThermalPrinterUiState
 import com.example.model.AppLanguage
 import com.example.model.Customer
 import com.example.model.GstTaxMode
@@ -241,7 +248,7 @@ fun BillsHistoryScreen(
             tone = ClayTones.Orange,
             cornerRadius = 16.dp,
             contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
-            modifier = Modifier.weight(1f).testTag("bills_new_order_btn"),
+            modifier = Modifier.weight(1f).defaultMinSize(minHeight = 48.dp).testTag("bills_new_order_btn"),
           ) {
             Icon(
               Icons.Filled.Add,
@@ -250,14 +257,21 @@ fun BillsHistoryScreen(
               modifier = Modifier.size(16.dp),
             )
             Spacer(Modifier.width(4.dp))
-            Text("New Order", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            Text(
+              text = "New Order",
+              color = Color.White,
+              fontSize = 12.sp,
+              fontWeight = FontWeight.Bold,
+              maxLines = 2,
+              textAlign = TextAlign.Center,
+            )
           }
           Button3D(
             onClick = onOpenOrders,
             isPrimary = false,
             cornerRadius = 16.dp,
             contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
-            modifier = Modifier.weight(1f).testTag("bills_pending_orders_btn"),
+            modifier = Modifier.weight(1f).defaultMinSize(minHeight = 48.dp).testTag("bills_pending_orders_btn"),
           ) {
             Icon3D(
               imageVector = Icons.Filled.LocalShipping,
@@ -272,6 +286,7 @@ fun BillsHistoryScreen(
               fontSize = 12.sp,
               fontWeight = FontWeight.Bold,
               maxLines = 2,
+              textAlign = TextAlign.Center,
               overflow = TextOverflow.Ellipsis,
             )
           }
@@ -321,7 +336,7 @@ fun BillsHistoryScreen(
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.SemiBold,
                     color = palette.textPrimary,
-                    maxLines = 1,
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                   )
                   Text(
@@ -329,7 +344,7 @@ fun BillsHistoryScreen(
                       "${CurrencyUtils.formatDateTime(inv.timestamp)} • ${inv.items.size} items • ${inv.paymentMethod.label}",
                     style = MaterialTheme.typography.bodySmall,
                     color = palette.textSecondary,
-                    maxLines = 1,
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                   )
                 }
@@ -760,7 +775,8 @@ fun PosBillingScreen(
                   )
                 },
                 label = "Address / City",
-                singleLine = true,
+                singleLine = false,
+                minLines = 2,
                 modifier = Modifier.fillMaxWidth().testTag("pos_customer_address_input"),
               )
               TextField3D(
@@ -794,7 +810,7 @@ fun PosBillingScreen(
             tone = ClayTones.Orange,
             cornerRadius = 18.dp,
             contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
-            modifier = Modifier.weight(1f).testTag("pos_add_product_btn"),
+            modifier = Modifier.weight(1f).defaultMinSize(minHeight = 48.dp).testTag("pos_add_product_btn"),
           ) {
             Icon(
               Icons.Filled.AddShoppingCart,
@@ -803,14 +819,20 @@ fun PosBillingScreen(
               modifier = Modifier.size(18.dp),
             )
             Spacer(Modifier.width(6.dp))
-            Text("Add Product", color = Color.White, fontWeight = FontWeight.Bold)
+            Text(
+              text = "Add Product",
+              color = Color.White,
+              fontWeight = FontWeight.Bold,
+              maxLines = 2,
+              textAlign = TextAlign.Center,
+            )
           }
           Button3D(
             onClick = { showCustomItemDialog = true },
             isPrimary = false,
             cornerRadius = 18.dp,
             contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
-            modifier = Modifier.weight(1f).testTag("pos_add_custom_btn"),
+            modifier = Modifier.weight(1f).defaultMinSize(minHeight = 48.dp).testTag("pos_add_custom_btn"),
           ) {
             Icon3D(
               imageVector = Icons.Filled.Add,
@@ -819,7 +841,13 @@ fun PosBillingScreen(
               size = 18.dp,
             )
             Spacer(Modifier.width(6.dp))
-            Text("Custom Item", color = palette.textPrimary, fontWeight = FontWeight.Bold)
+            Text(
+              text = "Custom Item",
+              color = palette.textPrimary,
+              fontWeight = FontWeight.Bold,
+              maxLines = 2,
+              textAlign = TextAlign.Center,
+            )
           }
         }
       }
@@ -1444,6 +1472,19 @@ fun InvoicePreviewScreen(
   onRegeneratePdf: (PaperFormat, AppLanguage) -> Unit,
   onShowToast: (String) -> Unit,
   onBack: () -> Unit,
+  printerState: ThermalPrinterUiState? = null,
+  requiredBluetoothPermissions: Array<String> = emptyArray(),
+  onRefreshPrinters: () -> Unit = {},
+  onStartPrinterScan: () -> Unit = {},
+  onStopPrinterScan: () -> Unit = {},
+  onSelectPrinter: (BluetoothPrinterDevice) -> Unit = {},
+  onPrinterPaperWidthChange: (ThermalPaperWidth) -> Unit = {},
+  onPrinterAutoCutChange: (Boolean) -> Unit = {},
+  onPrinterLogoChange: (Boolean) -> Unit = {},
+  onPrinterQrChange: (Boolean) -> Unit = {},
+  onConnectPrinter: () -> Unit = {},
+  onDisconnectPrinter: () -> Unit = {},
+  onPrintThermal: () -> Unit = {},
 ) {
   BackHandler(onBack = onBack)
 
@@ -1454,6 +1495,13 @@ fun InvoicePreviewScreen(
   val context = LocalContext.current
   var format by remember { mutableStateOf(initialFormat) }
   var language by remember { mutableStateOf(initialLanguage) }
+  var showPrinterSheet by remember { mutableStateOf(false) }
+
+  LaunchedEffect(Unit) {
+    if (printerState != null) {
+      onRefreshPrinters()
+    }
+  }
 
   val savePdfLauncher =
     rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/pdf")) { uri ->
@@ -1501,6 +1549,8 @@ fun InvoicePreviewScreen(
             style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.ExtraBold,
             color = palette.textPrimary,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f).padding(start = 4.dp),
           )
           if (pdfFile != null && pdfFile.exists()) {
@@ -1544,6 +1594,83 @@ fun InvoicePreviewScreen(
               .padding(horizontal = 12.dp, vertical = 12.dp),
           verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
+          if (printerState != null) {
+            Row(
+              modifier = Modifier.fillMaxWidth(),
+              horizontalArrangement = Arrangement.spacedBy(8.dp),
+              verticalAlignment = Alignment.CenterVertically,
+            ) {
+              Button3D(
+                onClick = { showPrinterSheet = true },
+                isPrimary = false,
+                cornerRadius = 16.dp,
+                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
+                modifier = Modifier.weight(1.1f).defaultMinSize(minHeight = 48.dp).testTag("thermal_printer_select_btn"),
+              ) {
+                Icon3D(
+                  imageVector = Icons.Filled.Bluetooth,
+                  contentDescription = null,
+                  tone =
+                    if (printerState.connectionStatus == PrinterConnectionStatus.CONNECTED) ClayTones.Green
+                    else ClayTones.Blue,
+                  size = 17.dp,
+                )
+                Spacer(Modifier.width(5.dp))
+                Text(
+                  text =
+                    if (printerState.selectedPrinter.hasPrinter) {
+                      "${printerState.selectedPrinter.name} (${printerState.connectionStatus.label})"
+                    } else {
+                      "Select Thermal Printer"
+                    },
+                  fontSize = 11.5.sp,
+                  fontWeight = FontWeight.SemiBold,
+                  maxLines = 2,
+                  textAlign = TextAlign.Center,
+                  overflow = TextOverflow.Ellipsis,
+                )
+              }
+
+              Button3D(
+                onClick = {
+                  if (
+                    printerState.selectedPrinter.hasPrinter &&
+                      printerState.hasBluetoothPermissions &&
+                      printerState.isBluetoothEnabled
+                  ) {
+                    onPrintThermal()
+                  } else {
+                    showPrinterSheet = true
+                  }
+                },
+                enabled =
+                  invoice != null && printerState.connectionStatus != PrinterConnectionStatus.PRINTING,
+                tone = ClayTones.Orange,
+                cornerRadius = 16.dp,
+                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
+                modifier = Modifier.weight(0.95f).defaultMinSize(minHeight = 48.dp).testTag("thermal_print_bar_btn"),
+              ) {
+                Icon(
+                  Icons.Filled.Print,
+                  contentDescription = null,
+                  tint = Color.White,
+                  modifier = Modifier.size(17.dp),
+                )
+                Spacer(Modifier.width(5.dp))
+                Text(
+                  text =
+                    if (printerState.connectionStatus == PrinterConnectionStatus.PRINTING) "Printing..."
+                    else "Print Thermal",
+                  color = Color.White,
+                  fontSize = 12.sp,
+                  fontWeight = FontWeight.Bold,
+                  maxLines = 2,
+                  textAlign = TextAlign.Center,
+                )
+              }
+            }
+          }
+
           Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -1561,7 +1688,7 @@ fun InvoicePreviewScreen(
               tone = ClayTones.Green,
               cornerRadius = 18.dp,
               contentPadding = PaddingValues(horizontal = 10.dp, vertical = 10.dp),
-              modifier = Modifier.weight(1.35f).testTag("whatsapp_share_pdf_btn"),
+              modifier = Modifier.weight(1.3f).defaultMinSize(minHeight = 48.dp).testTag("whatsapp_share_pdf_btn"),
             ) {
               Icon(
                 Icons.Filled.Share,
@@ -1570,7 +1697,14 @@ fun InvoicePreviewScreen(
                 modifier = Modifier.size(18.dp),
               )
               Spacer(Modifier.width(6.dp))
-              Text("WhatsApp PDF", color = Color.White, fontWeight = FontWeight.Bold, maxLines = 1)
+              Text(
+                text = "WhatsApp PDF",
+                color = Color.White,
+                fontWeight = FontWeight.Bold,
+                maxLines = 2,
+                textAlign = TextAlign.Center,
+                fontSize = 13.sp,
+              )
             }
             Button3D(
               onClick = {
@@ -1580,7 +1714,7 @@ fun InvoicePreviewScreen(
               isPrimary = false,
               cornerRadius = 18.dp,
               contentPadding = PaddingValues(horizontal = 10.dp, vertical = 10.dp),
-              modifier = Modifier.weight(1f).testTag("download_pdf_btn"),
+              modifier = Modifier.weight(1f).defaultMinSize(minHeight = 48.dp).testTag("download_pdf_btn"),
             ) {
               Icon3D(
                 imageVector = Icons.Filled.Download,
@@ -1589,7 +1723,13 @@ fun InvoicePreviewScreen(
                 size = 18.dp,
               )
               Spacer(Modifier.width(5.dp))
-              Text("Save", fontWeight = FontWeight.Bold, maxLines = 1)
+              Text(
+                text = "Save",
+                fontWeight = FontWeight.Bold,
+                maxLines = 2,
+                textAlign = TextAlign.Center,
+                fontSize = 13.sp,
+              )
             }
           }
 
@@ -1610,7 +1750,7 @@ fun InvoicePreviewScreen(
               isPrimary = false,
               cornerRadius = 18.dp,
               contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
-              modifier = Modifier.weight(1f),
+              modifier = Modifier.weight(1f).defaultMinSize(minHeight = 48.dp).testTag("print_pdf_btn"),
             ) {
               Icon3D(
                 imageVector = Icons.Filled.Print,
@@ -1619,7 +1759,13 @@ fun InvoicePreviewScreen(
                 size = 17.dp,
               )
               Spacer(Modifier.width(5.dp))
-              Text("Print PDF", fontWeight = FontWeight.SemiBold)
+              Text(
+                text = "Print PDF",
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 2,
+                textAlign = TextAlign.Center,
+                fontSize = 13.sp,
+              )
             }
             Button3D(
               onClick = {
@@ -1632,7 +1778,7 @@ fun InvoicePreviewScreen(
               isPrimary = false,
               cornerRadius = 18.dp,
               contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
-              modifier = Modifier.weight(1f),
+              modifier = Modifier.weight(1f).defaultMinSize(minHeight = 48.dp).testTag("open_pdf_btn"),
             ) {
               Icon3D(
                 imageVector = Icons.Filled.OpenInNew,
@@ -1641,7 +1787,13 @@ fun InvoicePreviewScreen(
                 size = 17.dp,
               )
               Spacer(Modifier.width(5.dp))
-              Text("Open PDF", fontWeight = FontWeight.SemiBold)
+              Text(
+                text = "Open PDF",
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 2,
+                textAlign = TextAlign.Center,
+                fontSize = 13.sp,
+              )
             }
           }
         }
@@ -1700,6 +1852,26 @@ fun InvoicePreviewScreen(
         }
       }
     }
+  }
+
+  if (showPrinterSheet && printerState != null) {
+    ThermalPrinterPickerSheet(
+      state = printerState,
+      requiredPermissions = requiredBluetoothPermissions,
+      canPrintInvoice = invoice != null,
+      onDismiss = { showPrinterSheet = false },
+      onRefreshPrinters = onRefreshPrinters,
+      onStartScan = onStartPrinterScan,
+      onStopScan = onStopPrinterScan,
+      onSelectPrinter = onSelectPrinter,
+      onPaperWidthChange = onPrinterPaperWidthChange,
+      onAutoCutChange = onPrinterAutoCutChange,
+      onPrintLogoChange = onPrinterLogoChange,
+      onPrintUpiQrChange = onPrinterQrChange,
+      onConnect = onConnectPrinter,
+      onDisconnect = onDisconnectPrinter,
+      onPrintNow = onPrintThermal,
+    )
   }
 }
 

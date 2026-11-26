@@ -234,6 +234,7 @@ val isPaymentStatusLoading by vm.isPaymentStatusLoading.collectAsStateWithLifecy
 val paymentRequests by vm.paymentRequests.collectAsStateWithLifecycle()
 val paymentSubmissionMessage by vm.paymentSubmissionMessage.collectAsStateWithLifecycle()
 val paymentErrorMessage by vm.paymentErrorMessage.collectAsStateWithLifecycle()
+val thermalPrinterState by vm.thermalPrinterState.collectAsStateWithLifecycle()
 
   val lifecycleOwner = LocalLifecycleOwner.current
   var hasObservedInitialResume by remember { mutableStateOf(false) }
@@ -683,6 +684,19 @@ val paymentErrorMessage by vm.paymentErrorMessage.collectAsStateWithLifecycle()
                         onRegeneratePdf = { pf, lang -> vm.regeneratePreviewPdf(pf, lang) },
                         onShowToast = { vm.showToast(it) },
                         onBack = { popSubScreen() },
+                        printerState = thermalPrinterState,
+                        requiredBluetoothPermissions = vm.thermalPrinterRequiredPermissions(),
+                        onRefreshPrinters = { vm.refreshThermalPrinters() },
+                        onStartPrinterScan = { vm.startThermalPrinterScan() },
+                        onStopPrinterScan = { vm.stopThermalPrinterScan() },
+                        onSelectPrinter = { vm.selectThermalPrinter(it) },
+                        onPrinterPaperWidthChange = { vm.setThermalPaperWidth(it) },
+                        onPrinterAutoCutChange = { vm.setThermalAutoCut(it) },
+                        onPrinterLogoChange = { vm.setThermalPrintLogo(it) },
+                        onPrinterQrChange = { vm.setThermalPrintUpiQr(it) },
+                        onConnectPrinter = { vm.connectThermalPrinter() },
+                        onDisconnectPrinter = { vm.disconnectThermalPrinter() },
+                        onPrintThermal = { vm.printActiveInvoiceThermal() },
                       )
                     }
                   }
@@ -828,6 +842,18 @@ val paymentErrorMessage by vm.paymentErrorMessage.collectAsStateWithLifecycle()
                           vm.setDefaultPaperFormat(pf)
                           vm.updateDefaultGstSettings(tt, tm, round)
                         },
+                        printerState = thermalPrinterState,
+                        requiredBluetoothPermissions = vm.thermalPrinterRequiredPermissions(),
+                        onRefreshPrinters = { vm.refreshThermalPrinters() },
+                        onStartPrinterScan = { vm.startThermalPrinterScan() },
+                        onStopPrinterScan = { vm.stopThermalPrinterScan() },
+                        onSelectPrinter = { vm.selectThermalPrinter(it) },
+                        onPrinterPaperWidthChange = { vm.setThermalPaperWidth(it) },
+                        onPrinterAutoCutChange = { vm.setThermalAutoCut(it) },
+                        onPrinterLogoChange = { vm.setThermalPrintLogo(it) },
+                        onPrinterQrChange = { vm.setThermalPrintUpiQr(it) },
+                        onConnectPrinter = { vm.connectThermalPrinter() },
+                        onDisconnectPrinter = { vm.disconnectThermalPrinter() },
                       )
                     }
                   }
