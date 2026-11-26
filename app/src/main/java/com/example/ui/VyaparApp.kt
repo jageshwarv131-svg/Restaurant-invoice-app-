@@ -135,10 +135,17 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.example.data.EntitlementStatus
+import com.example.data.FeatureDecision
+import com.example.data.FeatureEntitlements
+import com.example.data.FeatureKey
 import com.example.data.LicenseAccessState
 import com.example.data.LicenseStatus
 import com.example.data.PaymentRequestRecord
 import com.example.data.PaymentRequestStatus
+import com.example.data.SubscriptionPlan
+import com.example.data.SubscriptionState
+import com.example.data.SubscriptionTimeUtils
 import com.example.ui.screens.LicenseLockedScreen
 import com.example.ui.screens.LifetimeLicensePaymentScreen
 import com.example.ui.theme.AmberGold
@@ -150,8 +157,12 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.TextButton
 import androidx.compose.material.icons.filled.AccountCircle
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.Timer
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.style.TextAlign
+
 enum class BottomTab(
   val label: String,
   val selectedIcon: ImageVector,
@@ -183,6 +194,7 @@ enum class SubScreen {
 private enum class AppStage {
   SPLASH,
   PIN_LOCK,
+  AUTH,
   ONBOARDING,
   BUSINESS_SETUP,
   MAIN,
@@ -206,12 +218,17 @@ fun VyaparBillingApp(vm: VyaparViewModel = viewModel()) {
   val activeInvoice by vm.activePreviewInvoice.collectAsStateWithLifecycle()
   val activePdf by vm.activePreviewPdf.collectAsStateWithLifecycle()
   val toastMessage by vm.toastMessage.collectAsStateWithLifecycle()
+val isSessionCheckDone by vm.isSessionCheckDone.collectAsStateWithLifecycle()
 val isAuthLoading by vm.isAuthLoading.collectAsStateWithLifecycle()
 val isAuthenticated by vm.isAuthenticated.collectAsStateWithLifecycle()
 val authUserId by vm.authUserId.collectAsStateWithLifecycle()
 val authMessage by vm.authMessage.collectAsStateWithLifecycle()
 val licenseState by vm.licenseState.collectAsStateWithLifecycle()
-val hasActiveLicense = licenseState.hasActiveLicense
+val subscriptionState by vm.subscriptionState.collectAsStateWithLifecycle()
+val trialRemainingMillis by vm.trialRemainingMillis.collectAsStateWithLifecycle()
+val selectedPlan by vm.selectedSubscriptionPlan.collectAsStateWithLifecycle()
+val hasActiveLicense = subscriptionState.hasActivePaidPlan
+val isTrialActive = subscriptionState.status == EntitlementStatus.TRIAL_ACTIVE
 val isPaymentSubmitting by vm.isPaymentSubmitting.collectAsStateWithLifecycle()
 val isPaymentStatusLoading by vm.isPaymentStatusLoading.collectAsStateWithLifecycle()
 val paymentRequests by vm.paymentRequests.collectAsStateWithLifecycle()
@@ -238,6 +255,13 @@ val paymentErrorMessage by vm.paymentErrorMessage.collectAsStateWithLifecycle()
   var currentTab by remember { mutableStateOf(BottomTab.HOME) }
   val backStack = remember { mutableStateListOf<SubScreen>() }
   val activeSubScreen = backStack.lastOrNull() ?: SubScreen.NONE
+
+  LaunchedEffect(isAuthenticated) {
+    if (!isAuthenticated) {
+      backStack.clear()
+      currentTab = BottomTab.HOME
+    }
+  }
 
   var openAddProductDialog by remember { mutableStateOf(false) }
   var openAddCustomerDialog by remember { mutableStateOf(false) }
@@ -279,8 +303,9 @@ val paymentErrorMessage by vm.paymentErrorMessage.collectAsStateWithLifecycle()
 
     val stage =
       when {
-        showSplash || !isLoaded -> AppStage.SPLASH
+        showSplash || !isLoaded || !isSessionCheckDone -> AppStage.SPLASH
         settings.appPinEnabled && !isUnlocked -> AppStage.PIN_LOCK
+        !isAuthenticated -> AppStage.AUTH
         !settings.onboardingCompleted -> AppStage.ONBOARDING
         !settings.businessSetupCompleted -> AppStage.BUSINESS_SETUP
         else -> AppStage.MAIN
@@ -302,12 +327,33 @@ val paymentErrorMessage by vm.paymentErrorMessage.collectAsStateWithLifecycle()
           when (currentStage) {
             AppStage.SPLASH -> {
               SplashScreen(
-                isDataLoaded = isLoaded,
+                isDataLoaded = isLoaded && isSessionCheckDone,
                 onSplashFinished = { showSplash = false },
               )
             }
             AppStage.PIN_LOCK -> {
               PinLockScreen(onVerifyPin = { vm.unlockWithPin(it) })
+            }
+            AppStage.AUTH -> {
+              AuthAccountScreen(
+                isLoading = isAuthLoading,
+                isAuthenticated = isAuthenticated,
+                authMessage = authMessage,
+                licenseState = licenseState,
+                subscriptionState = subscriptionState,
+                trialRemainingMillis = trialRemainingMillis,
+                paymentRequests = paymentRequests,
+                allowBack = false,
+                onSignUp = { email, password -> vm.signUpWithSupabase(email, password) },
+                onLogin = { email, password -> vm.loginWithSupabase(email, password) },
+                onOpenLifetimeLicense = {
+                  vm.clearPaymentFeedback()
+                  pushSubScreen(SubScreen.LIFETIME_LICENSE)
+                },
+                onRefreshLicense = { vm.refreshLicenseStatus() },
+                onLogout = { vm.logoutFromSupabase() },
+                onBack = {},
+              )
             }
             AppStage.ONBOARDING -> {
               OnboardingScreen(onFinish = { vm.completeOnboarding() })
@@ -342,6 +388,13 @@ val paymentErrorMessage by vm.paymentErrorMessage.collectAsStateWithLifecycle()
                           .verticalScroll(rememberScrollState())
                           .padding(horizontal = 12.dp, vertical = 10.dp)
                     ) {
+                      fun navFromDrawer(tab: BottomTab? = null, sub: SubScreen? = null) {
+                        scope.launch { drawerState.close() }
+                        backStack.clear()
+                        if (tab != null) currentTab = tab
+                        if (sub != null) pushSubScreen(sub)
+                      }
+
                       // 3D Glossy Orange Brand Header Card
                       Card3D(
                         modifier = Modifier.fillMaxWidth(),
@@ -389,24 +442,32 @@ val paymentErrorMessage by vm.paymentErrorMessage.collectAsStateWithLifecycle()
                           color = Color.White.copy(alpha = 0.88f),
                         )
                         Spacer(Modifier.height(6.dp))
+                        val effectiveTrialRem =
+                          if (trialRemainingMillis > 0L) trialRemainingMillis
+                          else subscriptionState.trialRemainingMillis()
+                        val drawerPlanText = when (subscriptionState.status) {
+                          EntitlementStatus.LIFETIME_ACTIVE -> "Lifetime License Active"
+                          EntitlementStatus.MONTHLY_ACTIVE -> "Monthly License Active"
+                          EntitlementStatus.YEARLY_ACTIVE -> "Yearly License Active"
+                          EntitlementStatus.TRIAL_ACTIVE ->
+                            "Free Trial • ${SubscriptionTimeUtils.formatCountdown(effectiveTrialRem)}"
+                          EntitlementStatus.PAYMENT_PENDING -> "Payment Under Verification"
+                          EntitlementStatus.TRIAL_EXPIRED -> "Free Core • Upgrade Available"
+                          EntitlementStatus.MONTHLY_EXPIRED,
+                          EntitlementStatus.YEARLY_EXPIRED -> "Plan Expired • Renew Now"
+                          EntitlementStatus.REVOKED -> "Subscription Revoked"
+                          else -> "Plans: ₹499 / ₹999 / ₹2000"
+                        }
                         Text(
-                          text =
-                            if (hasActiveLicense) "Lifetime License Active"
-                            else "License Required • ₹499",
+                          text = drawerPlanText,
                           style = MaterialTheme.typography.labelSmall,
                           fontWeight = FontWeight.ExtraBold,
                           color = Color.White,
+                          modifier = Modifier.clickable { navFromDrawer(sub = SubScreen.LIFETIME_LICENSE) },
                         )
                       }
 
                       Spacer(Modifier.height(14.dp))
-
-                      fun navFromDrawer(tab: BottomTab? = null, sub: SubScreen? = null) {
-                        scope.launch { drawerState.close() }
-                        backStack.clear()
-                        if (tab != null) currentTab = tab
-                        if (sub != null) pushSubScreen(sub)
-                      }
 
                       DrawerItem3D(
                         label = "Dashboard",
@@ -506,19 +567,30 @@ val paymentErrorMessage by vm.paymentErrorMessage.collectAsStateWithLifecycle()
                         onClick = { navFromDrawer(sub = SubScreen.HELP) },
                       )
                       DrawerItem3D(
-    label = "My Account & License",
-    icon = Icons.Filled.AccountCircle,
-    tone = ClayTones.Green,
-    selected = activeSubScreen == SubScreen.ACCOUNT,
-    onClick = { navFromDrawer(sub = SubScreen.ACCOUNT) },
-)
+                        label = "Plans & License",
+                        icon = Icons.Filled.Star,
+                        tone = ClayTones.Purple,
+                        selected = activeSubScreen == SubScreen.LIFETIME_LICENSE,
+                        onClick = { navFromDrawer(sub = SubScreen.LIFETIME_LICENSE) },
+                      )
+                      DrawerItem3D(
+                        label = "My Account",
+                        icon = Icons.Filled.AccountCircle,
+                        tone = ClayTones.Green,
+                        selected = activeSubScreen == SubScreen.ACCOUNT,
+                        onClick = { navFromDrawer(sub = SubScreen.ACCOUNT) },
+                      )
                       Spacer(Modifier.height(14.dp))
                     }
                   }
                 },
               ) {
                 @Composable
-                fun LockedGate(featureTitle: String, showBackButton: Boolean) {
+                fun LockedGate(
+                  featureTitle: String,
+                  showBackButton: Boolean,
+                  decision: FeatureDecision? = null,
+                ) {
                   LicenseLockedScreen(
                     featureTitle = featureTitle,
                     isAuthenticated = isAuthenticated,
@@ -535,13 +607,29 @@ val paymentErrorMessage by vm.paymentErrorMessage.collectAsStateWithLifecycle()
                       pushSubScreen(SubScreen.ACCOUNT)
                     },
                     onRefreshLicense = { vm.refreshLicenseStatus() },
+                    subscriptionState = subscriptionState,
+                    reasonTitle = decision?.reasonTitle,
+                    reasonMessage = decision?.reasonMessage,
+                    onSelectPlanAndUpgrade = { plan ->
+                      vm.selectSubscriptionPlan(plan)
+                      vm.clearPaymentFeedback()
+                      pushSubScreen(SubScreen.LIFETIME_LICENSE)
+                    },
                   )
                 }
 
+                fun canAccess(feature: FeatureKey): FeatureDecision =
+                  FeatureEntitlements.evaluate(
+                    feature = feature,
+                    subscriptionState = subscriptionState,
+                    isAuthenticated = isAuthenticated,
+                  )
+
                 when (activeSubScreen) {
                   SubScreen.POS_BILLING -> {
-                    if (!hasActiveLicense) {
-                      LockedGate("POS Billing", showBackButton = true)
+                    val decision = canAccess(FeatureKey.POS_BILLING)
+                    if (!decision.allowed) {
+                      LockedGate("POS Billing", showBackButton = true, decision = decision)
                     } else {
                       PosBillingScreen(
                         cart = cart,
@@ -583,8 +671,9 @@ val paymentErrorMessage by vm.paymentErrorMessage.collectAsStateWithLifecycle()
                     }
                   }
                   SubScreen.INVOICE_PREVIEW -> {
-                    if (!hasActiveLicense) {
-                      LockedGate("Invoices & PDF", showBackButton = true)
+                    val decision = canAccess(FeatureKey.INVOICE_PREVIEW)
+                    if (!decision.allowed) {
+                      LockedGate("Invoices & PDF", showBackButton = true, decision = decision)
                     } else {
                       InvoicePreviewScreen(
                         invoice = activeInvoice,
@@ -598,8 +687,9 @@ val paymentErrorMessage by vm.paymentErrorMessage.collectAsStateWithLifecycle()
                     }
                   }
                   SubScreen.CUSTOMERS -> {
-                    if (!hasActiveLicense) {
-                      LockedGate("Customers", showBackButton = true)
+                    val decision = canAccess(FeatureKey.CUSTOMERS)
+                    if (!decision.allowed) {
+                      LockedGate("Customers", showBackButton = true, decision = decision)
                     } else {
                       CustomersScreen(
                         customers = customers,
@@ -620,8 +710,9 @@ val paymentErrorMessage by vm.paymentErrorMessage.collectAsStateWithLifecycle()
                     }
                   }
                   SubScreen.ORDERS -> {
-                    if (!hasActiveLicense) {
-                      LockedGate("Pending Orders", showBackButton = true)
+                    val decision = canAccess(FeatureKey.PENDING_ORDERS)
+                    if (!decision.allowed) {
+                      LockedGate("Pending Orders", showBackButton = true, decision = decision)
                     } else {
                       OrdersScreen(
                         orders = orders,
@@ -678,8 +769,9 @@ val paymentErrorMessage by vm.paymentErrorMessage.collectAsStateWithLifecycle()
                     }
                   }
                   SubScreen.EXPENSES -> {
-                    if (!hasActiveLicense) {
-                      LockedGate("Expenses", showBackButton = true)
+                    val decision = canAccess(FeatureKey.EXPENSES)
+                    if (!decision.allowed) {
+                      LockedGate("Expenses", showBackButton = true, decision = decision)
                     } else {
                       ExpensesScreen(
                         expenses = expenses,
@@ -693,8 +785,9 @@ val paymentErrorMessage by vm.paymentErrorMessage.collectAsStateWithLifecycle()
                     }
                   }
                   SubScreen.INVENTORY -> {
-                    if (!hasActiveLicense) {
-                      LockedGate("Inventory & Stock", showBackButton = true)
+                    val decision = canAccess(FeatureKey.INVENTORY)
+                    if (!decision.allowed) {
+                      LockedGate("Inventory & Stock", showBackButton = true, decision = decision)
                     } else {
                       InventoryScreen(
                         products = products,
@@ -707,8 +800,9 @@ val paymentErrorMessage by vm.paymentErrorMessage.collectAsStateWithLifecycle()
                     }
                   }
                   SubScreen.BUSINESS_PROFILE -> {
-                    if (!hasActiveLicense) {
-                      LockedGate("Business Profile", showBackButton = true)
+                    val decision = canAccess(FeatureKey.BUSINESS_PROFILE)
+                    if (!decision.allowed) {
+                      LockedGate("Business Profile", showBackButton = true, decision = decision)
                     } else {
                       BusinessSetupScreen(
                         existingProfile = business,
@@ -721,8 +815,9 @@ val paymentErrorMessage by vm.paymentErrorMessage.collectAsStateWithLifecycle()
                     }
                   }
                   SubScreen.INVOICE_SETTINGS -> {
-                    if (!hasActiveLicense) {
-                      LockedGate("Invoice & GST Settings", showBackButton = true)
+                    val decision = canAccess(FeatureKey.INVOICE_SETTINGS)
+                    if (!decision.allowed) {
+                      LockedGate("Invoice & GST Settings", showBackButton = true, decision = decision)
                     } else {
                       InvoiceSettingsScreen(
                         settings = settings,
@@ -737,8 +832,9 @@ val paymentErrorMessage by vm.paymentErrorMessage.collectAsStateWithLifecycle()
                     }
                   }
                   SubScreen.BACKUP_RESTORE -> {
-                    if (!hasActiveLicense) {
-                      LockedGate("Backup & Restore", showBackButton = true)
+                    val decision = canAccess(FeatureKey.BACKUP_RESTORE)
+                    if (!decision.allowed) {
+                      LockedGate("Backup & Restore", showBackButton = true, decision = decision)
                     } else {
                       BackupRestoreScreen(
                         lastBackupTimestamp = settings.lastBackupTimestamp,
@@ -767,7 +863,10 @@ val paymentErrorMessage by vm.paymentErrorMessage.collectAsStateWithLifecycle()
                       isAuthenticated = isAuthenticated,
                       authMessage = authMessage,
                       licenseState = licenseState,
+                      subscriptionState = subscriptionState,
+                      trialRemainingMillis = trialRemainingMillis,
                       paymentRequests = paymentRequests,
+                      allowBack = true,
                       onSignUp = { email, password ->
                         vm.signUpWithSupabase(email, password)
                       },
@@ -812,6 +911,13 @@ val paymentErrorMessage by vm.paymentErrorMessage.collectAsStateWithLifecycle()
                         vm.clearPaymentFeedback()
                         popSubScreen()
                       },
+                      subscriptionState = subscriptionState,
+                      trialRemainingMillis = trialRemainingMillis,
+                      selectedPlan = selectedPlan,
+                      onSelectPlan = { vm.selectSubscriptionPlan(it) },
+                      onSubmitPlanPayment = { plan, utr, note ->
+                        vm.submitSubscriptionPayment(plan, utr, note)
+                      },
                     )
                   }
 
@@ -846,14 +952,14 @@ val paymentErrorMessage by vm.paymentErrorMessage.collectAsStateWithLifecycle()
                               showBack = false,
                               onBackOrMenuClick = { scope.launch { drawerState.open() } },
                               onAlertClick = {
-                                if (hasActiveLicense) {
+                                if (isAuthenticated) {
                                   showAlertsDialog = true
                                 } else {
                                   vm.clearPaymentFeedback()
                                   pushSubScreen(SubScreen.LIFETIME_LICENSE)
                                 }
                               },
-                              alertCount = if (hasActiveLicense) metrics.lowStockCount else 0,
+                              alertCount = if (isAuthenticated) metrics.lowStockCount else 0,
                             )
                           },
                           bottomBar = {
@@ -868,41 +974,55 @@ val paymentErrorMessage by vm.paymentErrorMessage.collectAsStateWithLifecycle()
                           Box(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
                             when (currentTab) {
                               BottomTab.HOME -> {
-                                if (!hasActiveLicense) {
-                                  LockedGate("Dashboard", showBackButton = false)
+                                val decision = canAccess(FeatureKey.DASHBOARD)
+                                if (!decision.allowed) {
+                                  LockedGate("Dashboard", showBackButton = false, decision = decision)
                                 } else {
-                                  DashboardScreen(
-                                    business = business,
-                                    metrics = metrics,
-                                    invoices = invoices,
-                                    products = products,
-                                    onNewBill = { pushSubScreen(SubScreen.POS_BILLING) },
-                                    onAddProduct = {
-                                      openAddProductDialog = true
-                                      currentTab = BottomTab.PRODUCTS
-                                    },
-                                    onAddCustomer = {
-                                      openAddCustomerDialog = true
-                                      pushSubScreen(SubScreen.CUSTOMERS)
-                                    },
-                                    onOpenReports = { currentTab = BottomTab.REPORTS },
-                                    onOpenExpenses = { pushSubScreen(SubScreen.EXPENSES) },
-                                    onOpenInvoices = { currentTab = BottomTab.BILLS },
-                                    onOpenInventory = { pushSubScreen(SubScreen.INVENTORY) },
-                                    onOpenInvoicePreview = { inv ->
-                                      vm.openInvoicePreview(inv) {
-                                        pushSubScreen(SubScreen.INVOICE_PREVIEW)
-                                      }
-                                    },
-                                    onOpenCustomers = { pushSubScreen(SubScreen.CUSTOMERS) },
-                                    onOpenProducts = { currentTab = BottomTab.PRODUCTS },
-                                    onOpenOrders = { pushSubScreen(SubScreen.ORDERS) },
-                                  )
+                                  Column(modifier = Modifier.fillMaxSize()) {
+                                    SubscriptionStatusStrip(
+                                      subscriptionState = subscriptionState,
+                                      trialRemainingMillis = trialRemainingMillis,
+                                      onUpgradeClick = {
+                                        vm.clearPaymentFeedback()
+                                        pushSubScreen(SubScreen.LIFETIME_LICENSE)
+                                      },
+                                    )
+                                    Box(modifier = Modifier.weight(1f)) {
+                                      DashboardScreen(
+                                        business = business,
+                                        metrics = metrics,
+                                        invoices = invoices,
+                                        products = products,
+                                        onNewBill = { pushSubScreen(SubScreen.POS_BILLING) },
+                                        onAddProduct = {
+                                          openAddProductDialog = true
+                                          currentTab = BottomTab.PRODUCTS
+                                        },
+                                        onAddCustomer = {
+                                          openAddCustomerDialog = true
+                                          pushSubScreen(SubScreen.CUSTOMERS)
+                                        },
+                                        onOpenReports = { currentTab = BottomTab.REPORTS },
+                                        onOpenExpenses = { pushSubScreen(SubScreen.EXPENSES) },
+                                        onOpenInvoices = { currentTab = BottomTab.BILLS },
+                                        onOpenInventory = { pushSubScreen(SubScreen.INVENTORY) },
+                                        onOpenInvoicePreview = { inv ->
+                                          vm.openInvoicePreview(inv) {
+                                            pushSubScreen(SubScreen.INVOICE_PREVIEW)
+                                          }
+                                        },
+                                        onOpenCustomers = { pushSubScreen(SubScreen.CUSTOMERS) },
+                                        onOpenProducts = { currentTab = BottomTab.PRODUCTS },
+                                        onOpenOrders = { pushSubScreen(SubScreen.ORDERS) },
+                                      )
+                                    }
+                                  }
                                 }
                               }
                               BottomTab.BILLS -> {
-                                if (!hasActiveLicense) {
-                                  LockedGate("Bills & Invoices", showBackButton = false)
+                                val decision = canAccess(FeatureKey.BILLS)
+                                if (!decision.allowed) {
+                                  LockedGate("Bills & Invoices", showBackButton = false, decision = decision)
                                 } else {
                                   BillsHistoryScreen(
                                     invoices = invoices,
@@ -924,8 +1044,9 @@ val paymentErrorMessage by vm.paymentErrorMessage.collectAsStateWithLifecycle()
                                 }
                               }
                               BottomTab.PRODUCTS -> {
-                                if (!hasActiveLicense) {
-                                  LockedGate("Products", showBackButton = false)
+                                val decision = canAccess(FeatureKey.PRODUCTS)
+                                if (!decision.allowed) {
+                                  LockedGate("Products", showBackButton = false, decision = decision)
                                 } else {
                                   ProductsScreen(
                                     products = products,
@@ -944,8 +1065,9 @@ val paymentErrorMessage by vm.paymentErrorMessage.collectAsStateWithLifecycle()
                                 }
                               }
                               BottomTab.REPORTS -> {
-                                if (!hasActiveLicense) {
-                                  LockedGate("Reports & Analytics", showBackButton = false)
+                                val decision = canAccess(FeatureKey.REPORTS)
+                                if (!decision.allowed) {
+                                  LockedGate("Reports & Analytics", showBackButton = false, decision = decision)
                                 } else {
                                   ReportsScreen(
                                     business = business,
@@ -984,6 +1106,8 @@ val paymentErrorMessage by vm.paymentErrorMessage.collectAsStateWithLifecycle()
                                   onSetLanguage = { vm.setLanguage(it) },
                                   onUpdatePinSecurity = { en, pin -> vm.updatePinSecurity(en, pin) },
                                   onOpenHelp = { pushSubScreen(SubScreen.HELP) },
+                                  subscriptionState = subscriptionState,
+                                  trialRemainingMillis = trialRemainingMillis,
                                 )
                               }
                             }
@@ -1030,7 +1154,7 @@ val paymentErrorMessage by vm.paymentErrorMessage.collectAsStateWithLifecycle()
           }
         }
 
-        if (showAlertsDialog && hasActiveLicense) {
+        if (showAlertsDialog && isAuthenticated) {
           val lowProducts = products.filter { it.stockQty <= it.lowStockThreshold }
           val dueCustomers = customers.filter { it.outstandingBalancePaise > 0 }
           VyaparFormDialog(
@@ -1383,12 +1507,107 @@ private fun ClayNavigationRail(
 }
 
 @Composable
+private fun SubscriptionStatusStrip(
+  subscriptionState: SubscriptionState,
+  trialRemainingMillis: Long,
+  onUpgradeClick: () -> Unit,
+) {
+  val palette = LocalVyaparClayPalette.current
+  val status = subscriptionState.status
+  if (status == EntitlementStatus.LIFETIME_ACTIVE ||
+      status == EntitlementStatus.MONTHLY_ACTIVE ||
+      status == EntitlementStatus.YEARLY_ACTIVE ||
+      status == EntitlementStatus.UNAUTHENTICATED
+  ) {
+    return
+  }
+
+  val isTrial = status == EntitlementStatus.TRIAL_ACTIVE
+  val rem = if (trialRemainingMillis > 0L) trialRemainingMillis else subscriptionState.trialRemainingMillis()
+  val stripTone = when (status) {
+    EntitlementStatus.TRIAL_ACTIVE -> ClayTones.Blue
+    EntitlementStatus.PAYMENT_PENDING -> ClayTones.Amber
+    EntitlementStatus.TRIAL_EXPIRED,
+    EntitlementStatus.MONTHLY_EXPIRED,
+    EntitlementStatus.YEARLY_EXPIRED,
+    EntitlementStatus.REVOKED -> ClayTones.Red
+    else -> ClayTones.Orange
+  }
+
+  val title = when (status) {
+    EntitlementStatus.TRIAL_ACTIVE ->
+      "Free Trial • ${SubscriptionTimeUtils.formatCountdown(rem)}"
+    EntitlementStatus.PAYMENT_PENDING -> "Payment Under Verification"
+    EntitlementStatus.PAYMENT_REJECTED -> "Payment Rejected — Resubmit UTR"
+    EntitlementStatus.TRIAL_EXPIRED -> "2-Day Free Trial Ended"
+    EntitlementStatus.MONTHLY_EXPIRED, EntitlementStatus.YEARLY_EXPIRED -> "Subscription Expired"
+    EntitlementStatus.REVOKED -> "Subscription Revoked"
+    else -> "Core Plan Active"
+  }
+  val subtitle = when (status) {
+    EntitlementStatus.TRIAL_ACTIVE ->
+      "Upgrade anytime • Monthly ₹499, Yearly ₹999, Lifetime ₹2000"
+    else -> "Core POS & PDF active • Upgrade for Reports & Cloud Backup"
+  }
+
+  Row(
+    modifier =
+      Modifier.fillMaxWidth()
+        .padding(horizontal = 14.dp, vertical = 6.dp)
+        .raised3D(cornerRadius = 18.dp, tone = stripTone, shadowDepth = 4.dp)
+        .clickable(onClick = onUpgradeClick)
+        .padding(horizontal = 14.dp, vertical = 10.dp)
+        .testTag("dashboard_subscription_strip"),
+    verticalAlignment = Alignment.CenterVertically,
+    horizontalArrangement = Arrangement.SpaceBetween,
+  ) {
+    Icon(
+      imageVector = if (isTrial) Icons.Filled.Timer else Icons.Filled.Star,
+      contentDescription = null,
+      tint = Color.White,
+      modifier = Modifier.size(20.dp),
+    )
+    Spacer(Modifier.width(10.dp))
+    Column(modifier = Modifier.weight(1f)) {
+      Text(
+        text = title,
+        color = Color.White,
+        fontWeight = FontWeight.ExtraBold,
+        fontSize = 13.sp,
+      )
+      Text(
+        text = subtitle,
+        color = Color.White.copy(alpha = 0.9f),
+        fontSize = 11.sp,
+      )
+    }
+    Spacer(Modifier.width(8.dp))
+    Box(
+      modifier =
+        Modifier.clip(RoundedCornerShape(10.dp))
+          .background(Color.White.copy(alpha = 0.22f))
+          .padding(horizontal = 10.dp, vertical = 6.dp),
+    ) {
+      Text(
+        text = if (isTrial) "Plans" else "Upgrade",
+        color = Color.White,
+        fontSize = 11.sp,
+        fontWeight = FontWeight.ExtraBold,
+      )
+    }
+  }
+}
+
+@Composable
 private fun AuthAccountScreen(
     isLoading: Boolean,
     isAuthenticated: Boolean,
     authMessage: String?,
     licenseState: LicenseAccessState,
+    subscriptionState: SubscriptionState,
+    trialRemainingMillis: Long,
     paymentRequests: List<PaymentRequestRecord>,
+    allowBack: Boolean = true,
     onSignUp: (String, String) -> Unit,
     onLogin: (String, String) -> Unit,
     onOpenLifetimeLicense: () -> Unit,
@@ -1396,7 +1615,9 @@ private fun AuthAccountScreen(
     onLogout: () -> Unit,
     onBack: () -> Unit,
 ) {
-    BackHandler(enabled = !isLoading, onBack = onBack)
+    if (allowBack) {
+        BackHandler(enabled = !isLoading, onBack = onBack)
+    }
 
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
@@ -1415,12 +1636,14 @@ private fun AuthAccountScreen(
             .padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        TextButton(onClick = onBack) {
-            Text("← Back")
+        if (allowBack) {
+            TextButton(onClick = onBack) {
+                Text("← Back")
+            }
         }
 
         Text(
-            text = "My Account & License",
+            text = if (isAuthenticated) "My Account & Subscription" else "Vyapar Billing Pro",
             style = MaterialTheme.typography.headlineSmall,
             fontWeight = FontWeight.ExtraBold,
             color = palette.textPrimary,
@@ -1430,19 +1653,30 @@ private fun AuthAccountScreen(
             val approvedReq = paymentRequests.firstOrNull { it.status == PaymentRequestStatus.APPROVED }
             val pendingReq = paymentRequests.firstOrNull { it.status == PaymentRequestStatus.PENDING }
             val rejectedReq = paymentRequests.firstOrNull { it.status == PaymentRequestStatus.REJECTED }
-            val hasActiveLicense = licenseState.hasActiveLicense
-            val licenseStatusText = when {
-                hasActiveLicense -> "Lifetime License Active"
-                licenseState.isChecking -> "Verifying License Status..."
+            val hasActiveLicense = subscriptionState.hasActivePaidPlan
+            val effectiveTrialRem =
+                if (trialRemainingMillis > 0L) trialRemainingMillis
+                else subscriptionState.trialRemainingMillis()
+            val statusText = when {
+                subscriptionState.status == EntitlementStatus.LIFETIME_ACTIVE ->
+                    "Lifetime License Active (₹${subscriptionState.displayPaidAmountInr})"
+                subscriptionState.status == EntitlementStatus.YEARLY_ACTIVE ->
+                    "Yearly License Active • Expires ${SubscriptionTimeUtils.formatReadableDateTime(subscriptionState.expiresAt)}"
+                subscriptionState.status == EntitlementStatus.MONTHLY_ACTIVE ->
+                    "Monthly License Active • Expires ${SubscriptionTimeUtils.formatReadableDateTime(subscriptionState.expiresAt)}"
+                subscriptionState.status == EntitlementStatus.TRIAL_ACTIVE ->
+                    "2-Day Free Trial Active • ${SubscriptionTimeUtils.formatCountdown(effectiveTrialRem)}"
+                licenseState.isChecking -> "Verifying Subscription Status..."
                 licenseState.status == LicenseStatus.ERROR ->
                     licenseState.message ?: "Verification Failed — Tap Refresh"
-                pendingReq != null -> "Payment Under Verification (Pending)"
+                pendingReq != null -> "Payment Under Verification (${pendingReq.resolvedPlan.title})"
                 rejectedReq != null -> "Last Request Rejected — Resubmit Required"
-                approvedReq != null -> "Payment Approved — Tap Refresh to verify active license"
-                else -> "Inactive • Activate Lifetime License for ₹499"
+                approvedReq != null -> "Payment Approved — Tap Refresh to activate"
+                else -> "Core Plan Active • Upgrade to Monthly ₹499, Yearly ₹999, or Lifetime ₹2000"
             }
-            val licenseStatusColor = when {
+            val statusColor = when {
                 hasActiveLicense -> EmeraldGreen
+                subscriptionState.status == EntitlementStatus.TRIAL_ACTIVE -> com.example.ui.theme.InfoBlue
                 licenseState.status == LicenseStatus.ERROR || rejectedReq != null ->
                     com.example.ui.theme.AlertRed
                 pendingReq != null || approvedReq != null -> AmberGold
@@ -1456,7 +1690,7 @@ private fun AuthAccountScreen(
                 contentPadding = PaddingValues(18.dp),
             ) {
                 Text(
-                    text = "Account Login Successful",
+                    text = "Account Connected",
                     fontWeight = FontWeight.ExtraBold,
                     color = palette.textPrimary,
                 )
@@ -1464,17 +1698,26 @@ private fun AuthAccountScreen(
                 Spacer(Modifier.height(6.dp))
 
                 Text(
-                    text = "Your account is connected.",
+                    text = "Your account session is active and synced.",
                     color = palette.textSecondary,
                 )
 
                 Spacer(Modifier.height(10.dp))
 
                 Text(
-                    text = "License Status: $licenseStatusText",
+                    text = "Plan Status: $statusText",
                     fontWeight = FontWeight.Bold,
-                    color = licenseStatusColor,
+                    color = statusColor,
                 )
+
+                if (subscriptionState.status == EntitlementStatus.TRIAL_ACTIVE && !subscriptionState.trialExpiresAt.isNullOrBlank()) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = "Trial ends: ${SubscriptionTimeUtils.formatReadableDateTime(subscriptionState.trialExpiresAt)}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = palette.textSecondary,
+                    )
+                }
 
                 Spacer(Modifier.height(14.dp))
 
@@ -1485,11 +1728,14 @@ private fun AuthAccountScreen(
                     modifier = Modifier.fillMaxWidth().testTag("open_lifetime_license_btn"),
                 ) {
                     Text(
-                        text =
-                            if (hasActiveLicense) "View Lifetime License"
-                            else "Activate Lifetime License (₹499)",
+                        text = when {
+                            subscriptionState.status == EntitlementStatus.LIFETIME_ACTIVE -> "View Lifetime License"
+                            hasActiveLicense -> "Manage Plan / Upgrade"
+                            else -> "View Plans & Upgrade"
+                        },
                         color = Color.White,
                         fontWeight = FontWeight.ExtraBold,
+                        textAlign = TextAlign.Center,
                     )
                 }
 
@@ -1503,7 +1749,7 @@ private fun AuthAccountScreen(
                     modifier = Modifier.fillMaxWidth().testTag("account_refresh_license_btn"),
                 ) {
                     Text(
-                        text = if (licenseState.isChecking) "Verifying License..." else "Refresh License Status",
+                        text = if (licenseState.isChecking) "Verifying Subscription..." else "Refresh Plan Status",
                         fontWeight = FontWeight.Bold,
                         color = palette.textPrimary,
                     )
@@ -1513,12 +1759,33 @@ private fun AuthAccountScreen(
 
                 Button(
                     onClick = onLogout,
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().defaultMinSize(minHeight = 48.dp),
                 ) {
                     Text("Logout")
                 }
             }
         } else {
+            Card3D(
+                modifier = Modifier.fillMaxWidth(),
+                cornerRadius = 20.dp,
+                tone = ClayTones.HeroOrange,
+                shadowDepth = 4.dp,
+                contentPadding = PaddingValues(16.dp),
+            ) {
+                Text(
+                    text = "2-Day Free Trial Included",
+                    color = Color.White,
+                    fontWeight = FontWeight.ExtraBold,
+                    style = MaterialTheme.typography.titleMedium,
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = "Create a new account to start your 48-hour free trial automatically. Plans start at ₹499/month, ₹999/year, or ₹2000 Lifetime.",
+                    color = Color.White.copy(alpha = 0.92f),
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+
             Text(
                 text = if (createAccount) "Create New Account" else "Login to Your Account",
                 style = MaterialTheme.typography.titleLarge,
@@ -1527,7 +1794,7 @@ private fun AuthAccountScreen(
             )
 
             Text(
-                text = "Login or create an account to submit payment and activate your ₹499 Lifetime License.",
+                text = "Sign in to access POS billing, invoices, saved records, and manage your subscription plan.",
                 style = MaterialTheme.typography.bodySmall,
                 color = palette.textSecondary,
             )
@@ -1538,7 +1805,7 @@ private fun AuthAccountScreen(
                 label = { Text("Email Address") },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().testTag("auth_email_input"),
                 enabled = !isLoading,
             )
 
@@ -1549,7 +1816,7 @@ private fun AuthAccountScreen(
                 singleLine = true,
                 visualTransformation = PasswordVisualTransformation(),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().testTag("auth_password_input"),
                 enabled = !isLoading,
             )
 
@@ -1561,25 +1828,26 @@ private fun AuthAccountScreen(
                         onLogin(email.trim(), password)
                     }
                 },
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().defaultMinSize(minHeight = 50.dp).testTag("auth_submit_btn"),
                 enabled = !isLoading,
             ) {
                 if (isLoading) {
-                    CircularProgressIndicator()
+                    CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
                 } else {
-                    Text(if (createAccount) "Create Account" else "Login")
+                    Text(if (createAccount) "Create Account & Start 48h Trial" else "Login")
                 }
             }
 
             TextButton(
                 onClick = { createAccount = !createAccount },
                 enabled = !isLoading,
+                modifier = Modifier.testTag("auth_toggle_mode_btn"),
             ) {
                 Text(
                     if (createAccount) {
                         "Already have an account? Login"
                     } else {
-                        "New user? Create Account"
+                        "New user? Create Account (48h Free Trial)"
                     }
                 )
             }

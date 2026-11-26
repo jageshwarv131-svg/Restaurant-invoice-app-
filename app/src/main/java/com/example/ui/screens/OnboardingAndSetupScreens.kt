@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -635,7 +636,7 @@ fun OnboardingScreen(onFinish: () -> Unit) {
       modifier =
         Modifier.widthIn(max = 480.dp)
           .fillMaxWidth()
-          .height(54.dp)
+          .defaultMinSize(minHeight = 54.dp)
           .testTag("onboarding_next_button"),
     ) {
       Text(
@@ -717,8 +718,8 @@ fun BusinessSetupScreen(
           modifier =
             Modifier.fillMaxWidth()
               .raised3D(cornerRadius = 22.dp, shadowDepth = 4.dp)
-              .height(56.dp)
-              .padding(horizontal = 10.dp),
+              .defaultMinSize(minHeight = 56.dp)
+              .padding(horizontal = 10.dp, vertical = 4.dp),
           verticalAlignment = Alignment.CenterVertically,
         ) {
           if (canNavigateBack) {
@@ -810,7 +811,7 @@ fun BusinessSetupScreen(
           modifier =
             Modifier.widthIn(max = 560.dp)
               .fillMaxWidth()
-              .height(52.dp)
+              .defaultMinSize(minHeight = 52.dp)
               .testTag("save_business_button"),
         ) {
           Text(
@@ -1149,7 +1150,7 @@ fun PinLockScreen(onVerifyPin: (String) -> Boolean) {
             }
           },
           cornerRadius = 18.dp,
-          modifier = Modifier.fillMaxWidth().height(50.dp),
+          modifier = Modifier.fillMaxWidth().defaultMinSize(minHeight = 50.dp),
         ) {
           Text("Unlock", color = Color.White, fontWeight = FontWeight.ExtraBold)
         }

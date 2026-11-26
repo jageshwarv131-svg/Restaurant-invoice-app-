@@ -39,7 +39,7 @@ object InvoicePdfGenerator {
     val pdf = PdfDocument()
     var nativeOk = true
     try {
-      val logoBitmap = loadLogoBitmap(context, business.logoPath)
+      val logoBitmap = loadLogoBitmap(business.logoPath)
       try {
         when (paperFormat) {
           PaperFormat.A4 -> renderA4Invoice(pdf, business, invoice, language, logoBitmap)
@@ -75,16 +75,27 @@ object InvoicePdfGenerator {
     return file
   }
 
-  private fun loadLogoBitmap(context: Context, logoPath: String?): Bitmap? {
-    if (!logoPath.isNullOrBlank()) {
-      val file = File(logoPath)
-      if (file.exists()) {
-        val decoded = BitmapFactory.decodeFile(file.absolutePath)
-        if (decoded != null) return decoded
-      }
-    }
-    return runCatching { BitmapFactory.decodeResource(context.resources, R.drawable.img_vyapar_logo) }
-      .getOrNull()
+  internal fun computeTopCenteredLogoRect(
+    pageWidth: Float,
+    topY: Float,
+    bitmapWidth: Int,
+    bitmapHeight: Int,
+    maxWidth: Float,
+    maxHeight: Float,
+  ): RectF? {
+    if (bitmapWidth <= 0 || bitmapHeight <= 0 || maxWidth <= 0f || maxHeight <= 0f) return null
+    val scale = minOf(maxWidth / bitmapWidth.toFloat(), maxHeight / bitmapHeight.toFloat())
+    val drawW = bitmapWidth * scale
+    val drawH = bitmapHeight * scale
+    val left = (pageWidth - drawW) / 2f
+    return RectF(left, topY, left + drawW, topY + drawH)
+  }
+
+  internal fun loadLogoBitmap(logoPath: String?): Bitmap? {
+    if (logoPath.isNullOrBlank()) return null
+    val file = File(logoPath)
+    if (!file.exists() || !file.isFile) return null
+    return runCatching { BitmapFactory.decodeFile(file.absolutePath) }.getOrNull()
   }
 
   private fun renderA4Invoice(
@@ -152,25 +163,43 @@ object InvoicePdfGenerator {
     var canvas = page.canvas
 
     fun drawHeader(c: Canvas): Float {
-      var y = margin
+      var y = 26f
+      val centerX = pageW / 2f
       // Top orange accent bar
       fillPaint.color = orangeColor
       c.drawRect(0f, 0f, pageW.toFloat(), 6f, fillPaint)
 
-      // Logo
-      var textStartX = margin
+      // Top-centered store logo preserving original aspect ratio
       if (logoBitmap != null) {
-        val logoSize = 54f
-        val destRect = RectF(margin, y, margin + logoSize, y + logoSize)
-        c.drawBitmap(logoBitmap, Rect(0, 0, logoBitmap.width, logoBitmap.height), destRect, null)
-        textStartX = margin + logoSize + 12f
+        val destRect =
+          computeTopCenteredLogoRect(
+            pageWidth = pageW.toFloat(),
+            topY = y,
+            bitmapWidth = logoBitmap.width,
+            bitmapHeight = logoBitmap.height,
+            maxWidth = 156f,
+            maxHeight = 76f,
+          )
+        if (destRect != null) {
+          val imgPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+          c.drawBitmap(
+            logoBitmap,
+            Rect(0, 0, logoBitmap.width, logoBitmap.height),
+            destRect,
+            imgPaint,
+          )
+          y = destRect.bottom + 14f
+        }
       }
 
+      val centerTitlePaint = Paint(titlePaint).apply { textAlign = Paint.Align.CENTER }
+      val centerMutedPaint = Paint(mutedPaint).apply { textAlign = Paint.Align.CENTER }
+
       val bizName = business.businessName.ifBlank { "Vyapar Billing Pro" }
-      c.drawText(bizName, textStartX, y + 16f, titlePaint)
+      c.drawText(bizName, centerX, y + 14f, centerTitlePaint)
       var infoY = y + 30f
       if (business.tagline.isNotBlank()) {
-        c.drawText(business.tagline, textStartX, infoY, mutedPaint)
+        c.drawText(business.tagline, centerX, infoY, centerMutedPaint)
         infoY += 13f
       }
       val fullAddr =
@@ -178,22 +207,27 @@ object InvoicePdfGenerator {
           .filter { it.isNotBlank() }
           .joinToString(", ")
       if (fullAddr.isNotBlank()) {
-        c.drawText(fullAddr.take(58), textStartX, infoY, mutedPaint)
+        c.drawText(fullAddr.take(72), centerX, infoY, centerMutedPaint)
         infoY += 13f
       }
       val contactLine =
         buildString {
           if (business.mobile.isNotBlank()) append("Ph: ${business.mobile}  ")
           if (business.gstin.isNotBlank()) append("GSTIN: ${business.gstin}")
-        }
+        }.trim()
       if (contactLine.isNotBlank()) {
-        c.drawText(contactLine, textStartX, infoY, mutedPaint)
+        c.drawText(contactLine, centerX, infoY, centerMutedPaint)
         infoY += 13f
       }
 
-      // Invoice badge on top right
+      y = infoY + 4f
+      c.drawLine(margin, y, pageW - margin, y, linePaint)
+      y += 10f
+
+      // Centered TAX INVOICE badge below header
       fillPaint.color = orangeColor
-      val badgeRect = RectF(pageW - margin - 140f, y, pageW - margin, y + 26f)
+      val badgeW = 148f
+      val badgeRect = RectF(centerX - badgeW / 2f, y, centerX + badgeW / 2f, y + 24f)
       c.drawRoundRect(badgeRect, 6f, 6f, fillPaint)
       val badgeTextPaint =
         Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -203,10 +237,7 @@ object InvoicePdfGenerator {
           textAlign = Paint.Align.CENTER
         }
       c.drawText(labels.taxInvoice, badgeRect.centerX(), badgeRect.centerY() + 4f, badgeTextPaint)
-
-      y = maxOf(y + 62f, infoY + 8f)
-      c.drawLine(margin, y, pageW - margin, y, linePaint)
-      y += 14f
+      y = badgeRect.bottom + 12f
 
       // Customer + Invoice metadata box
       val boxHeight =
@@ -402,7 +433,8 @@ object InvoicePdfGenerator {
       (if (invoice.customerMobile.isNotBlank()) 11 else 0) +
         (if (invoice.customerAddress.isNotBlank()) 11 else 0) +
         (if (invoice.customerGstin.isNotBlank()) 11 else 0)
-    val pageH = 310 + extraCustLines + (invoice.items.size * 26)
+    val extraLogoHeight = if (logoBitmap != null) 58 else 0
+    val pageH = 310 + extraLogoHeight + extraCustLines + (invoice.items.size * 26)
 
     val page = pdf.startPage(PdfDocument.PageInfo.Builder(pageW, pageH, 1).create())
     val c = page.canvas
@@ -437,15 +469,25 @@ object InvoicePdfGenerator {
 
     var y = 14f
     if (logoBitmap != null) {
-      val sz = 34f
-      val left = (pageW - sz) / 2f
-      c.drawBitmap(
-        logoBitmap,
-        Rect(0, 0, logoBitmap.width, logoBitmap.height),
-        RectF(left, y, left + sz, y + sz),
-        null,
-      )
-      y += sz + 6f
+      val destRect =
+        computeTopCenteredLogoRect(
+          pageWidth = pageW.toFloat(),
+          topY = y,
+          bitmapWidth = logoBitmap.width,
+          bitmapHeight = logoBitmap.height,
+          maxWidth = 104f,
+          maxHeight = 48f,
+        )
+      if (destRect != null) {
+        val imgPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+        c.drawBitmap(
+          logoBitmap,
+          Rect(0, 0, logoBitmap.width, logoBitmap.height),
+          destRect,
+          imgPaint,
+        )
+        y = destRect.bottom + 10f
+      }
     }
 
     c.drawText(business.businessName.ifBlank { "Vyapar Billing Pro" }, pageW / 2f, y + 8f, centerBold)

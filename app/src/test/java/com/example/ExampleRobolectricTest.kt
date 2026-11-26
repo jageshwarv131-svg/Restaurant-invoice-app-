@@ -41,10 +41,14 @@ class ExampleRobolectricTest {
   @Test
   fun `main activity creates VyaparViewModel without exception`() {
     val controller = org.robolectric.Robolectric.buildActivity(MainActivity::class.java).setup()
-    val activity = controller.get()
-    val vm =
-      androidx.lifecycle.ViewModelProvider(activity)[com.example.ui.VyaparViewModel::class.java]
-    assertEquals(false, vm.toastMessage.value != null)
+    try {
+      val activity = controller.get()
+      val vm =
+        androidx.lifecycle.ViewModelProvider(activity)[com.example.ui.VyaparViewModel::class.java]
+      assertEquals(false, vm.toastMessage.value != null)
+    } finally {
+      controller.pause().stop().destroy()
+    }
   }
 
   @Test
@@ -205,36 +209,40 @@ class ExampleRobolectricTest {
   @Test
   fun `viewModel supports multi-product selection and inline customer details`() {
     val controller = org.robolectric.Robolectric.buildActivity(MainActivity::class.java).setup()
-    val vm =
-      androidx.lifecycle.ViewModelProvider(controller.get())[com.example.ui.VyaparViewModel::class.java]
+    try {
+      val vm =
+        androidx.lifecycle.ViewModelProvider(controller.get())[com.example.ui.VyaparViewModel::class.java]
 
-    val p1 = Product(id = "p1", name = "Burger", sellingPricePaise = 12000L, gstPercent = 5.0)
-    val p2 = Product(id = "p2", name = "Pizza", sellingPricePaise = 20000L, gstPercent = 5.0)
+      val p1 = Product(id = "p1", name = "Burger", sellingPricePaise = 12000L, gstPercent = 5.0)
+      val p2 = Product(id = "p2", name = "Pizza", sellingPricePaise = 20000L, gstPercent = 5.0)
 
-    vm.addProductToCart(p1)
-    vm.addProductToCart(p2)
-    vm.addProductToCart(p1)
-    assertEquals(2, vm.cart.value.items.size)
-    assertEquals(2.0, vm.cart.value.items.first { it.productId == "p1" }.quantity, 0.01)
-    assertEquals(1.0, vm.cart.value.items.first { it.productId == "p2" }.quantity, 0.01)
+      vm.addProductToCart(p1)
+      vm.addProductToCart(p2)
+      vm.addProductToCart(p1)
+      assertEquals(2, vm.cart.value.items.size)
+      assertEquals(2.0, vm.cart.value.items.first { it.productId == "p1" }.quantity, 0.01)
+      assertEquals(1.0, vm.cart.value.items.first { it.productId == "p2" }.quantity, 0.01)
 
-    vm.decrementProductInCart("p1")
-    assertEquals(1.0, vm.cart.value.items.first { it.productId == "p1" }.quantity, 0.01)
-    vm.decrementProductInCart("p1")
-    assertEquals(1, vm.cart.value.items.size)
-    assertEquals("p2", vm.cart.value.items.first().productId)
+      vm.decrementProductInCart("p1")
+      assertEquals(1.0, vm.cart.value.items.first { it.productId == "p1" }.quantity, 0.01)
+      vm.decrementProductInCart("p1")
+      assertEquals(1, vm.cart.value.items.size)
+      assertEquals("p2", vm.cart.value.items.first().productId)
 
-    vm.updateCartCustomerDetails(
-      name = "Suresh Patel",
-      mobile = "9123456780",
-      address = "MG Road",
-      gstin = "27AAAAA0000A1Z5",
-      saveToDirectory = true,
-    )
-    assertEquals("Suresh Patel", vm.cart.value.customerName)
-    assertEquals("9123456780", vm.cart.value.customerMobile)
-    assertEquals("MG Road", vm.cart.value.customerAddress)
-    assertEquals("27AAAAA0000A1Z5", vm.cart.value.customerGstin)
+      vm.updateCartCustomerDetails(
+        name = "Suresh Patel",
+        mobile = "9123456780",
+        address = "MG Road",
+        gstin = "27AAAAA0000A1Z5",
+        saveToDirectory = true,
+      )
+      assertEquals("Suresh Patel", vm.cart.value.customerName)
+      assertEquals("9123456780", vm.cart.value.customerMobile)
+      assertEquals("MG Road", vm.cart.value.customerAddress)
+      assertEquals("27AAAAA0000A1Z5", vm.cart.value.customerGstin)
+    } finally {
+      controller.pause().stop().destroy()
+    }
   }
 
   @Test
@@ -642,15 +650,19 @@ class ExampleRobolectricTest {
   @Test
   fun `VyaparViewModel defaults to locked unauthenticated license state`() {
     val controller = org.robolectric.Robolectric.buildActivity(MainActivity::class.java).setup()
-    val vm =
-      androidx.lifecycle.ViewModelProvider(controller.get())[com.example.ui.VyaparViewModel::class.java]
+    try {
+      val vm =
+        androidx.lifecycle.ViewModelProvider(controller.get())[com.example.ui.VyaparViewModel::class.java]
 
-    assertEquals(false, vm.isAuthenticated.value)
-    assertEquals(false, vm.licenseState.value.hasActiveLicense)
-    assertEquals(
-      com.example.data.LicenseStatus.UNAUTHENTICATED,
-      vm.licenseState.value.status,
-    )
+      assertEquals(false, vm.isAuthenticated.value)
+      assertEquals(false, vm.licenseState.value.hasActiveLicense)
+      assertEquals(
+        com.example.data.LicenseStatus.UNAUTHENTICATED,
+        vm.licenseState.value.status,
+      )
+    } finally {
+      controller.pause().stop().destroy()
+    }
   }
 
   private fun buildMockJwt(

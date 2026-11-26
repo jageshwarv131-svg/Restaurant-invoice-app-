@@ -271,7 +271,7 @@ fun BillsHistoryScreen(
               color = palette.textPrimary,
               fontSize = 12.sp,
               fontWeight = FontWeight.Bold,
-              maxLines = 1,
+              maxLines = 2,
               overflow = TextOverflow.Ellipsis,
             )
           }
@@ -470,8 +470,8 @@ fun PosBillingScreen(
           modifier =
             Modifier.fillMaxWidth()
               .raised3D(cornerRadius = 22.dp, shadowDepth = 4.dp)
-              .height(56.dp)
-              .padding(horizontal = 8.dp),
+              .defaultMinSize(minHeight = 56.dp)
+              .padding(horizontal = 8.dp, vertical = 4.dp),
           verticalAlignment = Alignment.CenterVertically,
         ) {
           Box(
@@ -1477,8 +1477,8 @@ fun InvoicePreviewScreen(
           modifier =
             Modifier.fillMaxWidth()
               .raised3D(cornerRadius = 22.dp, shadowDepth = 4.dp)
-              .height(56.dp)
-              .padding(horizontal = 8.dp),
+              .defaultMinSize(minHeight = 56.dp)
+              .padding(horizontal = 8.dp, vertical = 4.dp),
           verticalAlignment = Alignment.CenterVertically,
         ) {
           Box(

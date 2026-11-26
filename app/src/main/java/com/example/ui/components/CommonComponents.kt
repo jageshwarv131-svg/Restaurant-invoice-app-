@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -200,8 +201,8 @@ fun VyaparTopBar(
       modifier =
         Modifier.fillMaxWidth()
           .raised3D(cornerRadius = 22.dp, shadowDepth = 4.dp)
-          .height(56.dp)
-          .padding(horizontal = 10.dp),
+          .defaultMinSize(minHeight = 56.dp)
+          .padding(horizontal = 10.dp, vertical = 4.dp),
       verticalAlignment = Alignment.CenterVertically,
     ) {
       // 3D Hamburger / Back button

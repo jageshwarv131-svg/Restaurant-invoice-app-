@@ -30,15 +30,16 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.AccountBalanceWallet
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.HourglassTop
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Verified
 import androidx.compose.material.icons.filled.VerifiedUser
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -65,12 +66,17 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.data.EntitlementStatus
 import com.example.data.LicenseAccessState
 import com.example.data.LicenseStatus
 import com.example.data.PaymentRequestRecord
 import com.example.data.PaymentRequestStatus
+import com.example.data.SubscriptionPlan
+import com.example.data.SubscriptionState
+import com.example.data.SubscriptionTimeUtils
 import com.example.data.SupabasePaymentService
 import com.example.ui.components.Button3D
 import com.example.ui.components.Card3D
@@ -117,6 +123,11 @@ fun LifetimeLicensePaymentScreen(
   onSubmitPayment: (utr: String, customerNote: String) -> Unit,
   onShowToast: (String) -> Unit,
   onBack: () -> Unit,
+  subscriptionState: SubscriptionState? = null,
+  trialRemainingMillis: Long = 0L,
+  selectedPlan: SubscriptionPlan = SubscriptionPlan.MONTHLY,
+  onSelectPlan: (SubscriptionPlan) -> Unit = {},
+  onSubmitPlanPayment: ((SubscriptionPlan, String, String) -> Unit)? = null,
 ) {
   BackHandler(enabled = !isSubmitting, onBack = onBack)
 
@@ -125,12 +136,27 @@ fun LifetimeLicensePaymentScreen(
     ClayTone(palette.neutralIconTop, palette.textPrimary, palette.neutralIconBottom)
   }
 
+  val isUserMatched =
+    licenseState.userId.isNullOrBlank() || authUserId.isNullOrBlank() || licenseState.userId == authUserId
+
   val isConfirmedActiveLicense =
     isAuthenticated &&
       licenseState.hasActiveLicense &&
       licenseState.status == LicenseStatus.ACTIVE &&
       !licenseState.isChecking &&
-      (licenseState.userId.isNullOrBlank() || authUserId.isNullOrBlank() || licenseState.userId == authUserId)
+      isUserMatched
+
+  val activePlan = when {
+    subscriptionState?.status == EntitlementStatus.LIFETIME_ACTIVE -> SubscriptionPlan.LIFETIME
+    subscriptionState?.status == EntitlementStatus.MONTHLY_ACTIVE -> SubscriptionPlan.MONTHLY
+    subscriptionState?.status == EntitlementStatus.YEARLY_ACTIVE -> SubscriptionPlan.YEARLY
+    isConfirmedActiveLicense && (licenseState.plan == SubscriptionPlan.MONTHLY || licenseState.plan == SubscriptionPlan.YEARLY) ->
+      licenseState.plan
+    isConfirmedActiveLicense -> SubscriptionPlan.LIFETIME
+    else -> SubscriptionPlan.FREE
+  }
+
+  val isLifetimeApproved = isConfirmedActiveLicense && activePlan == SubscriptionPlan.LIFETIME
 
   val isLoadingState =
     isAuthenticated &&
@@ -140,6 +166,7 @@ fun LifetimeLicensePaymentScreen(
     isAuthenticated &&
       !isLoadingState &&
       !isConfirmedActiveLicense &&
+      subscriptionState?.status != EntitlementStatus.TRIAL_ACTIVE &&
       licenseState.status == LicenseStatus.ERROR
 
   val isRefreshingAny = isStatusLoading || licenseState.isChecking
@@ -156,13 +183,13 @@ fun LifetimeLicensePaymentScreen(
   }
 
   LaunchedEffect(errorMessage) {
-    if (!errorMessage.isNullOrBlank() && !isConfirmedActiveLicense && !isErrorState) {
+    if (!errorMessage.isNullOrBlank() && !isLifetimeApproved && !isErrorState) {
       onShowToast(errorMessage)
     }
   }
 
   val screenBackground =
-    if (isConfirmedActiveLicense && !palette.isDark) PaperBackdropLight else palette.background
+    if (isLifetimeApproved && !palette.isDark) PaperBackdropLight else palette.background
 
   Column(
     modifier =
@@ -182,8 +209,8 @@ fun LifetimeLicensePaymentScreen(
         Modifier.widthIn(max = 680.dp)
           .fillMaxWidth()
           .raised3D(cornerRadius = 22.dp, shadowDepth = 4.dp)
-          .height(56.dp)
-          .padding(horizontal = 8.dp),
+          .defaultMinSize(minHeight = 56.dp)
+          .padding(horizontal = 8.dp, vertical = 4.dp),
       verticalAlignment = Alignment.CenterVertically,
     ) {
       Box(
@@ -203,10 +230,12 @@ fun LifetimeLicensePaymentScreen(
       }
       Spacer(Modifier.width(6.dp))
       Text(
-        text = if (isConfirmedActiveLicense) "Lifetime License Agreement" else "Lifetime License",
+        text = if (isLifetimeApproved) "Lifetime License Agreement" else "Plans & License",
         style = MaterialTheme.typography.titleLarge,
         fontWeight = FontWeight.ExtraBold,
         color = palette.textPrimary,
+        maxLines = 2,
+        overflow = TextOverflow.Ellipsis,
         modifier = Modifier.weight(1f),
       )
       Box(
@@ -239,19 +268,25 @@ fun LifetimeLicensePaymentScreen(
         LicenseVerificationLoadingSection()
       }
 
-      isConfirmedActiveLicense -> {
+      isLifetimeApproved -> {
+        val approvedReq = paymentRequests.firstOrNull { it.status == PaymentRequestStatus.APPROVED }
         val approvedUtr =
-          paymentRequests.firstOrNull { it.status == PaymentRequestStatus.APPROVED }?.utr
-            ?.takeIf { it.isNotBlank() }
+          approvedReq?.utr?.takeIf { it.isNotBlank() }
             ?: licenseState.utr?.takeIf { it.isNotBlank() }
         val resolvedCustomerId =
           licenseState.userId?.takeIf { it.isNotBlank() } ?: authUserId.orEmpty()
+        val resolvedAmountInr =
+          subscriptionState?.displayPaidAmountInr
+            ?: approvedReq?.amountInr?.takeIf { it > 0 }
+            ?: licenseState.paidAmountInr
+            ?: if (licenseState.isLegacyLifetime || paymentRequests.isEmpty()) 499 else 2000
 
         LifetimeLicenseAgreementDocument(
           customerId = resolvedCustomerId,
           licenseId = licenseState.licenseId,
           activatedAt = licenseState.activatedAt,
           verifiedUtr = approvedUtr,
+          paidAmountInr = resolvedAmountInr,
         )
       }
 
@@ -259,7 +294,7 @@ fun LifetimeLicensePaymentScreen(
         LicenseVerificationErrorSection(
           message =
             licenseState.message
-              ?: "Unable to verify your lifetime license with Supabase. Please check your internet connection and try again.",
+              ?: "Unable to verify your subscription with the server. Please check your internet connection and try again.",
           isRetrying = isRefreshingAny,
           onRetry = onRefreshStatus,
         )
@@ -270,12 +305,24 @@ fun LifetimeLicensePaymentScreen(
           isAuthenticated = isAuthenticated,
           isSubmitting = isSubmitting,
           isRefreshingAny = isRefreshingAny,
+          licenseState = licenseState,
+          subscriptionState = subscriptionState,
+          trialRemainingMillis = trialRemainingMillis,
+          activePlan = activePlan,
+          selectedPlan = selectedPlan,
+          onSelectPlan = onSelectPlan,
           paymentRequests = paymentRequests,
           submissionMessage = submissionMessage,
           errorMessage = errorMessage,
           onOpenAccount = onOpenAccount,
           onRefreshStatus = onRefreshStatus,
-          onSubmitPayment = onSubmitPayment,
+          onSubmitPlanPayment = { plan, utr, note ->
+            if (onSubmitPlanPayment != null) {
+              onSubmitPlanPayment(plan, utr, note)
+            } else {
+              onSubmitPayment(utr, note)
+            }
+          },
           onShowToast = onShowToast,
         )
       }
@@ -304,14 +351,14 @@ private fun LicenseVerificationLoadingSection() {
         modifier = Modifier.size(38.dp),
       )
       Text(
-        text = "Verifying Lifetime License...",
+        text = "Verifying Subscription...",
         style = MaterialTheme.typography.titleMedium,
         fontWeight = FontWeight.ExtraBold,
         color = LocalVyaparClayPalette.current.textPrimary,
         textAlign = TextAlign.Center,
       )
       Text(
-        text = "Checking your active license record with Supabase for this account.",
+        text = "Checking your active plan and free trial status on our secure cloud server.",
         style = MaterialTheme.typography.bodySmall,
         color = LocalVyaparClayPalette.current.textSecondary,
         textAlign = TextAlign.Center,
@@ -348,7 +395,7 @@ private fun LicenseVerificationErrorSection(
         cornerRadius = 18.dp,
       )
       Text(
-        text = "License Verification Failed",
+        text = "Subscription Verification Failed",
         style = MaterialTheme.typography.titleMedium,
         fontWeight = FontWeight.ExtraBold,
         color = palette.textPrimary,
@@ -403,6 +450,7 @@ private fun LifetimeLicenseAgreementDocument(
   licenseId: String?,
   activatedAt: String?,
   verifiedUtr: String?,
+  paidAmountInr: Int = 499,
 ) {
   val formattedActivationDate = remember(activatedAt) { formatActivationDate(activatedAt) }
 
@@ -425,7 +473,6 @@ private fun LifetimeLicenseAgreementDocument(
           .padding(horizontal = 18.dp, vertical = 20.dp),
       verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-      // Document Header & Green APPROVED Stamp
       Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -456,7 +503,6 @@ private fun LifetimeLicenseAgreementDocument(
 
         Spacer(Modifier.width(12.dp))
 
-        // Green APPROVED Stamp / Seal
         Box(
           modifier =
             Modifier.rotate(-6f)
@@ -489,7 +535,6 @@ private fun LifetimeLicenseAgreementDocument(
 
       HorizontalDivider(thickness = 1.5.dp, color = PaperBorder)
 
-      // Schedule of License Details
       Column(
         modifier =
           Modifier.fillMaxWidth()
@@ -523,7 +568,7 @@ private fun LifetimeLicenseAgreementDocument(
           label = "Activation Date",
           value = formattedActivationDate,
         )
-        AgreementDetailRow(label = "Payment Amount", value = "₹499")
+        AgreementDetailRow(label = "Payment Amount", value = "₹$paidAmountInr")
         AgreementDetailRow(label = "Payment Method", value = "PhonePe")
         if (!verifiedUtr.isNullOrBlank()) {
           AgreementDetailRow(
@@ -544,7 +589,6 @@ private fun LifetimeLicenseAgreementDocument(
 
       HorizontalDivider(thickness = 1.dp, color = PaperHairline)
 
-      // Legal Terms & Conditions
       Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         AgreementClauseSection(
           number = "1.",
@@ -557,7 +601,7 @@ private fun LifetimeLicenseAgreementDocument(
           number = "2.",
           title = "Single-Account Usage Conditions",
           body =
-            "This Lifetime License is issued exclusively for the authenticated Supabase user account shown under Customer ID. Active status is validated directly against the server-side license registry for this account.",
+            "This Lifetime License is issued exclusively for the authenticated Vyapar Billing Pro user account shown under Customer ID. Active status is validated directly against the server-side license registry for this account.",
         )
 
         AgreementClauseSection(
@@ -571,7 +615,7 @@ private fun LifetimeLicenseAgreementDocument(
           number = "4.",
           title = "License Validity & Revocation Conditions",
           body =
-            "This license remains valid indefinitely so long as the ₹499 payment remains verified and unreversed and these terms are observed. Vyapar Billing Pro reserves the right to suspend or revoke license activation in cases of payment reversal, chargeback, fraudulent UTR submission, unauthorized account sharing, or breach of these conditions; upon revocation, licensed features are automatically restricted.",
+            "This license remains valid indefinitely so long as the ₹$paidAmountInr payment remains verified and unreversed and these terms are observed. Vyapar Billing Pro reserves the right to suspend or revoke license activation in cases of payment reversal, chargeback, fraudulent UTR submission, unauthorized account sharing, or breach of these conditions; upon revocation, licensed features are automatically restricted.",
         )
 
         AgreementClauseSection(
@@ -584,7 +628,6 @@ private fun LifetimeLicenseAgreementDocument(
 
       HorizontalDivider(thickness = 1.dp, color = PaperBorder)
 
-      // Digital Authorization Section
       Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -696,12 +739,18 @@ private fun LifetimeLicensePaymentFormSection(
   isAuthenticated: Boolean,
   isSubmitting: Boolean,
   isRefreshingAny: Boolean,
+  licenseState: LicenseAccessState,
+  subscriptionState: SubscriptionState?,
+  trialRemainingMillis: Long,
+  activePlan: SubscriptionPlan,
+  selectedPlan: SubscriptionPlan,
+  onSelectPlan: (SubscriptionPlan) -> Unit,
   paymentRequests: List<PaymentRequestRecord>,
   submissionMessage: String?,
   errorMessage: String?,
   onOpenAccount: () -> Unit,
   onRefreshStatus: () -> Unit,
-  onSubmitPayment: (utr: String, customerNote: String) -> Unit,
+  onSubmitPlanPayment: (plan: SubscriptionPlan, utr: String, customerNote: String) -> Unit,
   onShowToast: (String) -> Unit,
 ) {
   val context = LocalContext.current
@@ -709,6 +758,9 @@ private fun LifetimeLicensePaymentFormSection(
   val clipboard = LocalClipboardManager.current
   val palette = LocalVyaparClayPalette.current
 
+  var activeSelectedPlan by remember(selectedPlan) {
+    mutableStateOf(if (selectedPlan.isPaidPlan) selectedPlan else SubscriptionPlan.MONTHLY)
+  }
   var utrInput by remember { mutableStateOf("") }
   var customerNote by remember { mutableStateOf("") }
   var localLaunchError by remember { mutableStateOf<String?>(null) }
@@ -722,7 +774,8 @@ private fun LifetimeLicensePaymentFormSection(
 
   val approvedRequest = paymentRequests.firstOrNull { it.status == PaymentRequestStatus.APPROVED }
   val pendingRequest = paymentRequests.firstOrNull { it.status == PaymentRequestStatus.PENDING }
-  val hasBlockingRequest = approvedRequest != null || pendingRequest != null
+  val isCurrentlyPaidActive = activePlan.isPaidPlan
+  val hasBlockingRequest = pendingRequest != null || (isCurrentlyPaidActive && activePlan == activeSelectedPlan)
   val showVerificationBanner =
     submissionMessage == "Payment Under Verification" || pendingRequest != null
 
@@ -731,15 +784,62 @@ private fun LifetimeLicensePaymentFormSection(
       if (utrInput.isBlank()) null else SupabasePaymentService.validateUtr(utrInput)
     }
 
+  val subStatus = subscriptionState?.status
+  val effectiveTrialRemaining =
+    if (trialRemainingMillis > 0L) trialRemainingMillis
+    else subscriptionState?.trialRemainingMillis() ?: 0L
+
+  val heroTone = when (subStatus) {
+    EntitlementStatus.MONTHLY_ACTIVE, EntitlementStatus.YEARLY_ACTIVE -> ClayTones.Green
+    EntitlementStatus.TRIAL_ACTIVE -> ClayTones.Blue
+    EntitlementStatus.TRIAL_EXPIRED,
+    EntitlementStatus.MONTHLY_EXPIRED,
+    EntitlementStatus.YEARLY_EXPIRED,
+    EntitlementStatus.REVOKED -> ClayTones.Red
+    EntitlementStatus.PAYMENT_PENDING -> ClayTones.Amber
+    else -> ClayTones.HeroOrange
+  }
+
+  val heroTitle = when (subStatus) {
+    EntitlementStatus.MONTHLY_ACTIVE -> "Monthly License Active"
+    EntitlementStatus.YEARLY_ACTIVE -> "Yearly License Active"
+    EntitlementStatus.TRIAL_ACTIVE -> "2-Day Free Trial Active"
+    EntitlementStatus.TRIAL_EXPIRED -> "Free Trial Expired"
+    EntitlementStatus.MONTHLY_EXPIRED -> "Monthly License Expired"
+    EntitlementStatus.YEARLY_EXPIRED -> "Yearly License Expired"
+    EntitlementStatus.PAYMENT_PENDING -> "Payment Pending Verification"
+    EntitlementStatus.PAYMENT_REJECTED -> "Previous Payment Rejected"
+    EntitlementStatus.REVOKED -> "Subscription Revoked"
+    else -> "Vyapar Billing Pro Plans"
+  }
+
+  val heroSubtitle = when (subStatus) {
+    EntitlementStatus.MONTHLY_ACTIVE, EntitlementStatus.YEARLY_ACTIVE -> {
+      val exp = subscriptionState?.expiresAt ?: licenseState.expiresAt
+      if (!exp.isNullOrBlank()) "Valid until ${SubscriptionTimeUtils.formatReadableDateTime(exp)}"
+      else "Active paid subscription verified"
+    }
+    EntitlementStatus.TRIAL_ACTIVE -> {
+      val countdown = SubscriptionTimeUtils.formatCountdown(effectiveTrialRemaining)
+      val expFormatted = SubscriptionTimeUtils.formatReadableDateTime(subscriptionState?.trialExpiresAt)
+      "$countdown • Ends $expFormatted"
+    }
+    EntitlementStatus.TRIAL_EXPIRED ->
+      "Core billing & saved invoices remain safe. Upgrade anytime for full Pro access."
+    EntitlementStatus.MONTHLY_EXPIRED, EntitlementStatus.YEARLY_EXPIRED ->
+      "Renew your plan below to restore Reports, Backup & Pro tools."
+    else -> "2-Day Free Trial included on signup • Manual UPI activation"
+  }
+
   Column(
     modifier = Modifier.widthIn(max = 680.dp).fillMaxWidth(),
     verticalArrangement = Arrangement.spacedBy(14.dp),
   ) {
-    // Hero Card: ₹499 Lifetime License
+    // Current Plan Hero Status Card
     Card3D(
-      modifier = Modifier.fillMaxWidth(),
+      modifier = Modifier.fillMaxWidth().testTag("subscription_hero_card"),
       cornerRadius = 26.dp,
-      tone = ClayTones.HeroOrange,
+      tone = heroTone,
       shadowDepth = 6.dp,
       contentPadding = PaddingValues(18.dp),
     ) {
@@ -750,16 +850,16 @@ private fun LifetimeLicensePaymentFormSection(
       ) {
         Column(modifier = Modifier.weight(1f)) {
           Text(
-            text = "₹499 Lifetime License",
+            text = heroTitle,
             style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.ExtraBold,
             color = Color.White,
           )
           Spacer(Modifier.height(4.dp))
           Text(
-            text = "One-time UPI payment • Manual admin verification",
+            text = heroSubtitle,
             style = MaterialTheme.typography.bodySmall,
-            color = Color.White.copy(alpha = 0.9f),
+            color = Color.White.copy(alpha = 0.92f),
           )
         }
         Spacer(Modifier.width(12.dp))
@@ -767,14 +867,68 @@ private fun LifetimeLicensePaymentFormSection(
           contentAlignment = Alignment.Center,
           modifier =
             Modifier.raised3D(cornerRadius = 16.dp, shadowDepth = 3.dp)
-              .padding(horizontal = 14.dp, vertical = 10.dp),
+              .padding(horizontal = 12.dp, vertical = 9.dp),
         ) {
           Text(
-            text = "₹499",
+            text = when {
+              subStatus == EntitlementStatus.TRIAL_ACTIVE ->
+                SubscriptionTimeUtils.formatCountdown(effectiveTrialRemaining)
+              isCurrentlyPaidActive -> "ACTIVE"
+              else -> "₹${activeSelectedPlan.priceInr}"
+            },
             color = SaffronOrange,
-            fontSize = 20.sp,
+            fontSize = if (subStatus == EntitlementStatus.TRIAL_ACTIVE) 13.sp else 18.sp,
             fontWeight = FontWeight.ExtraBold,
+            textAlign = TextAlign.Center,
           )
+        }
+      }
+    }
+
+    // Active Monthly / Yearly Plan Summary Card
+    if (isCurrentlyPaidActive && (activePlan == SubscriptionPlan.MONTHLY || activePlan == SubscriptionPlan.YEARLY)) {
+      Card3D(
+        modifier = Modifier.fillMaxWidth().testTag("active_timed_plan_card"),
+        cornerRadius = 22.dp,
+        accentBorderColor = EmeraldGreen,
+        shadowDepth = 4.dp,
+        contentPadding = PaddingValues(16.dp),
+      ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+          ClayIconPad(
+            imageVector = Icons.Filled.VerifiedUser,
+            contentDescription = "Active Plan",
+            tone = ClayTones.Green,
+            padSize = 44.dp,
+            iconSize = 22.dp,
+            cornerRadius = 14.dp,
+          )
+          Spacer(Modifier.width(12.dp))
+          Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(
+              text = "${activePlan.title} (${activePlan.durationLabel})",
+              style = MaterialTheme.typography.titleMedium,
+              fontWeight = FontWeight.ExtraBold,
+              color = palette.textPrimary,
+            )
+            val activated = subscriptionState?.activatedAt ?: licenseState.activatedAt
+            val expires = subscriptionState?.expiresAt ?: licenseState.expiresAt
+            if (!activated.isNullOrBlank()) {
+              Text(
+                text = "Activated: ${SubscriptionTimeUtils.formatReadableDateTime(activated)}",
+                style = MaterialTheme.typography.bodySmall,
+                color = palette.textSecondary,
+              )
+            }
+            if (!expires.isNullOrBlank()) {
+              Text(
+                text = "Expires: ${SubscriptionTimeUtils.formatReadableDateTime(expires)}",
+                style = MaterialTheme.typography.bodySmall,
+                fontWeight = FontWeight.SemiBold,
+                color = EmeraldGreen,
+              )
+            }
+          }
         }
       }
     }
@@ -816,7 +970,7 @@ private fun LifetimeLicensePaymentFormSection(
       }
     }
 
-    if (approvedRequest != null) {
+    if (approvedRequest != null && !isCurrentlyPaidActive) {
       Card3D(
         modifier = Modifier.fillMaxWidth(),
         cornerRadius = 22.dp,
@@ -836,13 +990,13 @@ private fun LifetimeLicensePaymentFormSection(
           Spacer(Modifier.width(12.dp))
           Column(modifier = Modifier.weight(1f)) {
             Text(
-              text = "Payment Approved — License Pending Activation",
+              text = "Payment Approved — Syncing License",
               style = MaterialTheme.typography.titleMedium,
               fontWeight = FontWeight.ExtraBold,
               color = palette.textPrimary,
             )
             Text(
-              text = "Your active license record is not active yet. Tap Refresh to verify with server.",
+              text = "Tap Refresh above to verify your active subscription with the server.",
               style = MaterialTheme.typography.bodySmall,
               color = palette.textSecondary,
             )
@@ -875,6 +1029,7 @@ private fun LifetimeLicensePaymentFormSection(
               color = palette.textPrimary,
             )
             val utrText = pendingRequest?.utr?.takeIf { it.isNotBlank() }
+            val reqAmount = pendingRequest?.amountInr ?: activeSelectedPlan.priceInr
             if (utrText != null) {
               Text(
                 text = "Submitted UTR: $utrText",
@@ -885,9 +1040,163 @@ private fun LifetimeLicensePaymentFormSection(
             }
             Text(
               text =
-                "Your ₹499 payment is pending manual admin verification. License activates once approved.",
+                "Your ₹$reqAmount payment is pending manual admin verification. License activates once approved.",
               style = MaterialTheme.typography.bodySmall,
               color = palette.textSecondary,
+            )
+          }
+        }
+      }
+    }
+
+    // Plan Selector Cards: Monthly ₹499, Yearly ₹999, Lifetime ₹2000
+    Card3D(
+      modifier = Modifier.fillMaxWidth().testTag("plan_selector_card"),
+      cornerRadius = 24.dp,
+      shadowDepth = 5.dp,
+      contentPadding = PaddingValues(16.dp),
+    ) {
+      Text(
+        text = "Choose Your Plan",
+        style = MaterialTheme.typography.titleMedium,
+        fontWeight = FontWeight.ExtraBold,
+        color = palette.textPrimary,
+      )
+      Spacer(Modifier.height(4.dp))
+      Text(
+        text = "Select Monthly, Yearly, or Lifetime access to upgrade Vyapar Billing Pro.",
+        style = MaterialTheme.typography.bodySmall,
+        color = palette.textSecondary,
+      )
+      Spacer(Modifier.height(12.dp))
+
+      Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        SubscriptionPlan.purchasablePlans.forEach { plan ->
+          val isSelected = activeSelectedPlan == plan
+          val isPlanAlreadyActive = isCurrentlyPaidActive && activePlan == plan
+          val cardModifier = Modifier
+            .fillMaxWidth()
+            .testTag("plan_card_${plan.apiValue}")
+            .raised3D(
+              cornerRadius = 18.dp,
+              tone = if (isSelected) ClayTones.HeroOrange else null,
+              shadowDepth = if (isSelected) 5.dp else 2.dp,
+            )
+            .clickable {
+              activeSelectedPlan = plan
+              onSelectPlan(plan)
+            }
+            .padding(horizontal = 14.dp, vertical = 12.dp)
+
+          Row(
+            modifier = cardModifier,
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+          ) {
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+              Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+              ) {
+                Text(
+                  text = plan.title,
+                  fontWeight = FontWeight.ExtraBold,
+                  fontSize = 15.sp,
+                  color = if (isSelected) Color.White else palette.textPrimary,
+                )
+                if (!plan.badge.isNullOrBlank()) {
+                  Box(
+                    modifier = Modifier
+                      .clip(RoundedCornerShape(8.dp))
+                      .background(
+                        if (isSelected) Color.White.copy(alpha = 0.22f)
+                        else SaffronOrange.copy(alpha = 0.14f)
+                      )
+                      .padding(horizontal = 7.dp, vertical = 2.dp),
+                  ) {
+                    Text(
+                      text = if (isPlanAlreadyActive) "ACTIVE" else plan.badge,
+                      fontSize = 10.sp,
+                      fontWeight = FontWeight.ExtraBold,
+                      color = if (isSelected) Color.White else SaffronOrange,
+                    )
+                  }
+                }
+              }
+              Text(
+                text = when (plan) {
+                  SubscriptionPlan.MONTHLY -> "Full Pro access for 1 Month"
+                  SubscriptionPlan.YEARLY -> "Full Pro access for 1 Year (Save 83%)"
+                  SubscriptionPlan.LIFETIME -> "One-time payment • Valid forever"
+                  else -> plan.durationLabel
+                },
+                fontSize = 12.sp,
+                color = if (isSelected) Color.White.copy(alpha = 0.9f) else palette.textSecondary,
+              )
+            }
+            Spacer(Modifier.width(10.dp))
+            Column(horizontalAlignment = Alignment.End) {
+              Text(
+                text = "₹${plan.priceInr}",
+                fontSize = 19.sp,
+                fontWeight = FontWeight.ExtraBold,
+                color = if (isSelected) Color.White else SaffronOrange,
+              )
+              Text(
+                text = "/ ${plan.durationLabel}",
+                fontSize = 11.sp,
+                color = if (isSelected) Color.White.copy(alpha = 0.88f) else palette.textSecondary,
+              )
+            }
+          }
+        }
+      }
+    }
+
+    // Premium Features Overview Card
+    Card3D(
+      modifier = Modifier.fillMaxWidth().testTag("premium_features_list_card"),
+      cornerRadius = 22.dp,
+      shadowDepth = 4.dp,
+      contentPadding = PaddingValues(16.dp),
+    ) {
+      Row(verticalAlignment = Alignment.CenterVertically) {
+        Icon3D(
+          imageVector = Icons.Filled.Star,
+          contentDescription = null,
+          tone = ClayTones.Amber,
+          size = 20.dp,
+        )
+        Spacer(Modifier.width(8.dp))
+        Text(
+          text = "What You Unlock",
+          style = MaterialTheme.typography.titleMedium,
+          fontWeight = FontWeight.ExtraBold,
+          color = palette.textPrimary,
+        )
+      }
+      Spacer(Modifier.height(10.dp))
+      val features = listOf(
+        "Sales, GST & Profit Reports & Analytics",
+        "Encrypted Local & Cloud Backup & Restore",
+        "Pending Orders & Customer Order Tracking",
+        "Business Expense Ledger & Stock Adjustments",
+        "Core POS Billing, GST Invoices & PDF Export (Always Unlocked)",
+      )
+      Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+        features.forEach { feature ->
+          Row(verticalAlignment = Alignment.Top) {
+            Icon(
+              imageVector = Icons.Filled.CheckCircle,
+              contentDescription = null,
+              tint = EmeraldGreen,
+              modifier = Modifier.padding(top = 2.dp).size(16.dp),
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(
+              text = feature,
+              style = MaterialTheme.typography.bodySmall,
+              color = palette.textPrimary,
             )
           }
         }
@@ -913,13 +1222,13 @@ private fun LifetimeLicensePaymentFormSection(
         Spacer(Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
           Text(
-            text = "Step 1: Pay ₹499 via UPI",
+            text = "Step 1: Pay ₹${activeSelectedPlan.priceInr} via UPI",
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.ExtraBold,
             color = palette.textPrimary,
           )
           Text(
-            text = "PhonePe / UPI ID: ${SupabasePaymentService.PHONEPE_UPI_ID}",
+            text = "${activeSelectedPlan.title} (${activeSelectedPlan.durationLabel}) • ${SupabasePaymentService.PHONEPE_UPI_ID}",
             style = MaterialTheme.typography.bodySmall,
             color = palette.textSecondary,
           )
@@ -936,8 +1245,8 @@ private fun LifetimeLicensePaymentFormSection(
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
       ) {
-        Column {
-          Text("UPI ID", fontSize = 11.sp, color = palette.textSecondary)
+        Column(modifier = Modifier.weight(1f)) {
+          Text("PhonePe / UPI ID", fontSize = 11.sp, color = palette.textSecondary)
           Text(
             text = SupabasePaymentService.PHONEPE_UPI_ID,
             fontWeight = FontWeight.ExtraBold,
@@ -979,16 +1288,19 @@ private fun LifetimeLicensePaymentFormSection(
       Button3D(
         onClick = {
           localLaunchError = null
-          val upiUri = SupabasePaymentService.buildUpiPaymentUri()
+          val upiUri = SupabasePaymentService.buildUpiPaymentUri(
+            amountInr = activeSelectedPlan.priceInr,
+            note = "Vyapar Billing Pro ${activeSelectedPlan.title}",
+          )
           val upiIntent = Intent(Intent.ACTION_VIEW, upiUri)
-          val chooser = Intent.createChooser(upiIntent, "Pay ₹499 via UPI")
+          val chooser = Intent.createChooser(upiIntent, "Pay ₹${activeSelectedPlan.priceInr} via UPI")
           runCatching { context.startActivity(chooser) }
             .onFailure {
               localLaunchError =
-                "No UPI app found on this device. Pay ₹499 to ${SupabasePaymentService.PHONEPE_UPI_ID} and enter your UTR below."
+                "No UPI app found on this device. Pay ₹${activeSelectedPlan.priceInr} to ${SupabasePaymentService.PHONEPE_UPI_ID} and enter your UTR below."
             }
         },
-        enabled = !isSubmitting && approvedRequest == null,
+        enabled = !isSubmitting && !(isCurrentlyPaidActive && activePlan == activeSelectedPlan),
         tone = ClayTones.Purple,
         cornerRadius = 18.dp,
         modifier = Modifier.fillMaxWidth().testTag("pay_with_phonepe_btn"),
@@ -1001,10 +1313,11 @@ private fun LifetimeLicensePaymentFormSection(
         )
         Spacer(Modifier.width(8.dp))
         Text(
-          text = "Pay with PhonePe (₹499)",
+          text = "Pay with PhonePe (₹${activeSelectedPlan.priceInr})",
           color = Color.White,
           fontWeight = FontWeight.ExtraBold,
           fontSize = 15.sp,
+          textAlign = TextAlign.Center,
         )
       }
     }
@@ -1034,7 +1347,7 @@ private fun LifetimeLicensePaymentFormSection(
             color = palette.textPrimary,
           )
           Text(
-            text = "Enter the UPI Reference / UTR number after paying ₹499",
+            text = "Enter the UPI Reference / UTR after paying ₹${activeSelectedPlan.priceInr} for ${activeSelectedPlan.title}",
             style = MaterialTheme.typography.bodySmall,
             color = palette.textSecondary,
           )
@@ -1105,7 +1418,7 @@ private fun LifetimeLicensePaymentFormSection(
       Button3D(
         onClick = {
           localLaunchError = null
-          onSubmitPayment(utrInput, customerNote)
+          onSubmitPlanPayment(activeSelectedPlan, utrInput, customerNote)
         },
         enabled = isAuthenticated && !isSubmitting && !hasBlockingRequest && utrInput.isNotBlank(),
         tone = ClayTones.Orange,
@@ -1125,21 +1438,22 @@ private fun LifetimeLicensePaymentFormSection(
             text =
               when {
                 !isAuthenticated -> "Login First to Submit UTR"
-                approvedRequest != null -> "Payment Approved — Tap Refresh"
+                isCurrentlyPaidActive && activePlan == activeSelectedPlan -> "Plan Already Active"
                 pendingRequest != null -> "Verification Pending"
-                else -> "Submit Payment Request"
+                else -> "Submit ₹${activeSelectedPlan.priceInr} Payment Request"
               },
             color =
               if (isAuthenticated && !hasBlockingRequest && utrInput.isNotBlank()) Color.White
               else palette.textSecondary,
             fontWeight = FontWeight.ExtraBold,
             fontSize = 15.sp,
+            textAlign = TextAlign.Center,
           )
         }
       }
     }
 
-    // Payment Status History (Pending, Approved, Rejected)
+    // Payment Status History
     Card3D(
       modifier = Modifier.fillMaxWidth(),
       cornerRadius = 24.dp,
@@ -1152,10 +1466,11 @@ private fun LifetimeLicensePaymentFormSection(
         verticalAlignment = Alignment.CenterVertically,
       ) {
         Text(
-          text = "Payment Request Status",
+          text = "Payment Request History",
           style = MaterialTheme.typography.titleMedium,
           fontWeight = FontWeight.ExtraBold,
           color = palette.textPrimary,
+          modifier = Modifier.weight(1f),
         )
         Box(
           modifier =
@@ -1179,7 +1494,7 @@ private fun LifetimeLicensePaymentFormSection(
       if (paymentRequests.isEmpty()) {
         Text(
           text =
-            "No payment requests submitted yet. Pay ₹499 via PhonePe and submit your UTR above.",
+            "No payment requests submitted yet. Choose a plan, pay via PhonePe, and submit your UTR above.",
           style = MaterialTheme.typography.bodySmall,
           color = palette.textSecondary,
         )
@@ -1209,7 +1524,9 @@ private fun LifetimeLicensePaymentFormSection(
                     fontWeight = FontWeight.ExtraBold,
                     color = palette.textPrimary,
                     style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.weight(1f),
                   )
+                  Spacer(Modifier.width(8.dp))
                   Box(
                     modifier =
                       Modifier.raised3D(
@@ -1233,7 +1550,7 @@ private fun LifetimeLicensePaymentFormSection(
                   }
                 }
                 Text(
-                  text = "₹${req.amountInr} • ${req.paymentMethod}",
+                  text = "${req.resolvedPlan.title} • ₹${req.amountInr} • ${req.paymentMethod}",
                   style = MaterialTheme.typography.bodySmall,
                   color = statusColor,
                   fontWeight = FontWeight.SemiBold,

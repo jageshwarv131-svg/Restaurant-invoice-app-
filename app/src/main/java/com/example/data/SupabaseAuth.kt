@@ -13,6 +13,7 @@ data class AuthResult(
     val accessToken: String? = null,
     val refreshToken: String? = null,
     val userId: String? = null,
+    val userCreatedAt: String? = null,
     val requiresEmailConfirmation: Boolean = false,
     val isNetworkError: Boolean = false
 )
@@ -118,6 +119,11 @@ class SupabaseAuth(
                     ?: user?.optString("id")?.takeIf { it.isNotBlank() }
                     ?: json.optString("id").takeIf { it.isNotBlank() })
 
+                val userCreatedAt = (user?.optString("created_at")
+                    ?.takeIf { it.isNotBlank() && !it.equals("null", ignoreCase = true) }
+                    ?: json.optString("created_at")
+                        .takeIf { it.isNotBlank() && !it.equals("null", ignoreCase = true) })
+
                 if (accessToken == null || userId == null) {
                     val pendingEmailConfirmation = isSignUp && (
                         userId != null ||
@@ -129,6 +135,7 @@ class SupabaseAuth(
                             success = true,
                             message = "Account created. Please confirm your email address before logging in.",
                             userId = userId,
+                            userCreatedAt = userCreatedAt,
                             requiresEmailConfirmation = true
                         )
                     }
@@ -143,7 +150,8 @@ class SupabaseAuth(
                     message = "Authentication successful",
                     accessToken = accessToken,
                     refreshToken = refreshToken,
-                    userId = userId
+                    userId = userId,
+                    userCreatedAt = userCreatedAt
                 )
             }
         } catch (e: IOException) {

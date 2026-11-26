@@ -722,7 +722,7 @@ private fun QuickActionCard3D(
         fontWeight = FontWeight.Bold,
         color = palette.textPrimary,
         textAlign = TextAlign.Center,
-        maxLines = 1,
+        maxLines = 2,
         overflow = TextOverflow.Ellipsis,
       )
     }

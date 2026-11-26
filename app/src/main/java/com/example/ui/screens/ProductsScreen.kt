@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -460,10 +461,10 @@ fun ProductsScreen(
                   } else {
                     Row(
                       modifier =
-                        Modifier.height(36.dp)
+                        Modifier.defaultMinSize(minHeight = 36.dp)
                           .raised3D(cornerRadius = 12.dp, tone = ClayTones.Orange, shadowDepth = 3.dp)
                           .clickable { onIncrementProductInCart(product) }
-                          .padding(horizontal = 10.dp)
+                          .padding(horizontal = 10.dp, vertical = 6.dp)
                           .testTag("quick_add_bill_${product.id}"),
                       verticalAlignment = Alignment.CenterVertically,
                     ) {

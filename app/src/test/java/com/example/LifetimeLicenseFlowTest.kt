@@ -7,6 +7,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.test.core.app.ApplicationProvider
 import com.example.data.LicenseAccessState
 import com.example.data.LicenseStatus
@@ -101,7 +102,7 @@ class LifetimeLicenseFlowTest {
       }
     }
 
-    composeTestRule.onNodeWithTag("payment_step1_card").assertIsDisplayed()
+    composeTestRule.onNodeWithTag("payment_step1_card").performScrollTo().assertIsDisplayed()
     composeTestRule.onNodeWithTag("pay_with_phonepe_btn").assertExists()
     composeTestRule.onNodeWithTag("utr_input").assertExists()
     composeTestRule.onNodeWithTag("submit_payment_btn").assertExists()
@@ -299,7 +300,7 @@ class LifetimeLicenseFlowTest {
     }
 
     composeTestRule.onNodeWithTag("lifetime_license_agreement_screen").assertDoesNotExist()
-    composeTestRule.onNodeWithTag("payment_step1_card").assertIsDisplayed()
+    composeTestRule.onNodeWithTag("payment_step1_card").performScrollTo().assertIsDisplayed()
 
     // Service defense: row missing user_id or belonging to another user or revoked status never grants access
     val service =
@@ -329,7 +330,7 @@ class LifetimeLicenseFlowTest {
       )
     val revoked = revokedService.verifyActiveLicense(accessToken = buildJwt("user-A"), userId = "user-A")
     assertEquals(false, revoked.hasActiveLicense)
-    assertEquals(LicenseStatus.INACTIVE, revoked.status)
+    assertEquals(LicenseStatus.REVOKED, revoked.status)
   }
 
   @Test
@@ -386,14 +387,20 @@ class LifetimeLicenseFlowTest {
         }
         path.endsWith("/auth/v1/logout") -> jsonResponse(req, 200, "{}")
         path.endsWith("/rest/v1/licenses") -> {
-          if (query.contains("user_id=eq.$userA") && activeUserAServerStatus == "active") {
-            jsonResponse(
-              req,
-              200,
-              """[{"id":"lic_aaa","user_id":"$userA","status":"active","activated_at":"2026-11-25T09:15:00Z"}]""",
-            )
-          } else {
-            jsonResponse(req, 200, "[]")
+          when {
+            query.contains("user_id=eq.$userA") && activeUserAServerStatus == "active" ->
+              jsonResponse(
+                req,
+                200,
+                """[{"id":"lic_aaa","user_id":"$userA","status":"active","activated_at":"2026-11-25T09:15:00Z"}]""",
+              )
+            query.contains("user_id=eq.$userA") && activeUserAServerStatus == "revoked" ->
+              jsonResponse(
+                req,
+                200,
+                """[{"id":"lic_aaa","user_id":"$userA","status":"revoked","activated_at":"2026-11-25T09:15:00Z"}]""",
+              )
+            else -> jsonResponse(req, 200, "[]")
           }
         }
         path.endsWith("/rest/v1/payment_requests") -> {
@@ -444,7 +451,7 @@ class LifetimeLicenseFlowTest {
     // 3. Revocation on Supabase removes active access upon refresh
     activeUserAServerStatus = "revoked"
     vmRestarted.refreshLicenseStatus()
-    waitUntil { !vmRestarted.licenseState.value.isChecking && vmRestarted.licenseState.value.status == LicenseStatus.INACTIVE }
+    waitUntil { !vmRestarted.licenseState.value.isChecking && vmRestarted.licenseState.value.status == LicenseStatus.REVOKED }
     assertEquals(false, vmRestarted.licenseState.value.hasActiveLicense)
 
     // 4. Logout clears User A state completely, then login as User B stays inactive

@@ -32,13 +32,17 @@ data class JwtClaims(
 data class PaymentRequestRecord(
     val id: String = "",
     val userId: String = "",
+    val planType: String = SubscriptionPlan.MONTHLY.apiValue,
     val amountInr: Int = SupabasePaymentService.LICENSE_AMOUNT_INR,
     val paymentMethod: String = SupabasePaymentService.PAYMENT_METHOD_PHONEPE,
     val utr: String = "",
     val status: PaymentRequestStatus = PaymentRequestStatus.PENDING,
     val customerNote: String = "",
     val createdAt: String = "",
-)
+) {
+    val resolvedPlan: SubscriptionPlan
+        get() = SubscriptionPlan.fromApi(planType, amountInr)
+}
 
 data class PaymentSubmitResult(
     val success: Boolean,
@@ -112,7 +116,7 @@ class SupabasePaymentService(
             upiId: String = PHONEPE_UPI_ID,
             payeeName: String = "Vyapar Billing Pro",
             amountInr: Int = LICENSE_AMOUNT_INR,
-            note: String = "Vyapar Billing Pro Lifetime License",
+            note: String = "Vyapar Billing Pro License",
         ): Uri {
             return Uri.Builder()
                 .scheme("upi")
@@ -129,10 +133,13 @@ class SupabasePaymentService(
             userId: String,
             utr: String,
             customerNote: String,
+            plan: SubscriptionPlan = SubscriptionPlan.MONTHLY,
         ): JSONObject {
+            val effectivePlan = if (plan.isPaidPlan) plan else SubscriptionPlan.MONTHLY
             return JSONObject()
                 .put("user_id", userId.trim())
-                .put("amount_inr", LICENSE_AMOUNT_INR)
+                .put("plan_type", effectivePlan.apiValue)
+                .put("amount_inr", effectivePlan.priceInr)
                 .put("payment_method", PAYMENT_METHOD_PHONEPE)
                 .put("utr", sanitizeUtr(utr))
                 .put("status", STATUS_PENDING)
@@ -140,10 +147,16 @@ class SupabasePaymentService(
         }
 
         internal fun parseRecord(json: JSONObject): PaymentRequestRecord {
+            val amountInr = json.optInt("amount_inr", LICENSE_AMOUNT_INR)
+            val rawPlan = json.optString("plan_type")
+                .trim()
+                .takeIf { it.isNotBlank() && !it.equals("null", ignoreCase = true) }
+            val resolvedPlan = SubscriptionPlan.fromApi(rawPlan, amountInr)
             return PaymentRequestRecord(
                 id = json.optString("id"),
                 userId = json.optString("user_id"),
-                amountInr = json.optInt("amount_inr", LICENSE_AMOUNT_INR),
+                planType = rawPlan ?: resolvedPlan.apiValue,
+                amountInr = amountInr,
                 paymentMethod = json.optString("payment_method", PAYMENT_METHOD_PHONEPE),
                 utr = json.optString("utr"),
                 status = PaymentRequestStatus.fromApi(json.optString("status")),
@@ -225,6 +238,7 @@ class SupabasePaymentService(
         userId: String,
         utrInput: String,
         customerNote: String,
+        plan: SubscriptionPlan = SubscriptionPlan.MONTHLY,
         currentEpochSeconds: Long = System.currentTimeMillis() / 1000L,
     ): PaymentSubmitResult {
         val cleanToken = accessToken.trim()
@@ -264,7 +278,7 @@ class SupabasePaymentService(
         if (!claims.role.isNullOrBlank() && claims.role != "authenticated") {
             return PaymentSubmitResult(
                 success = false,
-                message = "Invalid Supabase session role (${claims.role}). Please login again.",
+                message = "Invalid account session role (${claims.role}). Please login again.",
                 isUnauthorized = true,
             )
         }
@@ -281,7 +295,12 @@ class SupabasePaymentService(
             return PaymentSubmitResult(success = false, message = utrError)
         }
 
-        val payload = buildInsertPayload(userId = cleanUserId, utr = utrInput, customerNote = customerNote)
+        val payload = buildInsertPayload(
+            userId = cleanUserId,
+            utr = utrInput,
+            customerNote = customerNote,
+            plan = plan,
+        )
         val url = SupabaseConfig.SUPABASE_URL.trimEnd('/') + PAYMENT_REQUESTS_PATH
 
         return try {
@@ -329,7 +348,7 @@ class SupabasePaymentService(
                     val safePreview = sanitizeSafeErrorText(bodyText).take(160)
                         .ifBlank { "empty response body" }
                     val msg =
-                        "HTTP ${response.code}: Supabase did not confirm inserted row ($safePreview). Please verify RLS insert/select policy."
+                        "HTTP ${response.code}: Payment server did not confirm inserted row ($safePreview). Please verify account access policy."
                     safeLogWarn("POST $PAYMENT_REQUESTS_PATH unconfirmed representation: $msg")
                     return PaymentSubmitResult(
                         success = false,
@@ -381,7 +400,7 @@ class SupabasePaymentService(
         val url =
             SupabaseConfig.SUPABASE_URL.trimEnd('/') +
                 "$PAYMENT_REQUESTS_PATH?user_id=eq.$encodedUserId" +
-                "&select=id,user_id,amount_inr,payment_method,utr,status,customer_note,created_at" +
+                "&select=*" +
                 "&order=created_at.desc"
 
         return try {

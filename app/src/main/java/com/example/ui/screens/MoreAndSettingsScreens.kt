@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -83,6 +84,9 @@ import com.example.ui.components.Icon3D
 import com.example.ui.components.TextField3D
 import com.example.ui.components.VyaparFormDialog
 import com.example.ui.components.VyaparTopBar
+import com.example.data.EntitlementStatus
+import com.example.data.SubscriptionState
+import com.example.data.SubscriptionTimeUtils
 import com.example.ui.theme.EmeraldGreen
 import com.example.ui.theme.LocalVyaparClayPalette
 import com.example.ui.theme.SaffronOrange
@@ -109,9 +113,16 @@ fun MoreScreen(
   onSetLanguage: (AppLanguage) -> Unit,
   onUpdatePinSecurity: (Boolean, String) -> Unit,
   onOpenHelp: () -> Unit,
+  subscriptionState: SubscriptionState? = null,
+  trialRemainingMillis: Long = 0L,
 ) {
   val palette = LocalVyaparClayPalette.current
   var showPinDialog by remember { mutableStateOf(false) }
+  val subStatus = subscriptionState?.status
+  val isTrialActive = subStatus == EntitlementStatus.TRIAL_ACTIVE
+  val effectiveTrialRemaining =
+    if (trialRemainingMillis > 0L) trialRemainingMillis
+    else subscriptionState?.trialRemainingMillis() ?: 0L
 
   LazyColumn(
     modifier = Modifier.fillMaxSize().background(palette.background),
@@ -120,7 +131,7 @@ fun MoreScreen(
   ) {
     item {
       Text(
-        text = "Account & License",
+        text = "Account & Plans",
         style = MaterialTheme.typography.labelLarge,
         fontWeight = FontWeight.Bold,
         color = palette.textSecondary,
@@ -133,19 +144,37 @@ fun MoreScreen(
       ) {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
           SettingsRow3D(
-            title = "My Account & License",
+            title = "My Account & Subscription",
             subtitle = when {
-              hasActiveLicense -> "Lifetime License Active"
-              isAuthenticated -> "Signed in • Activate ₹499 Lifetime License"
+              subStatus == EntitlementStatus.LIFETIME_ACTIVE || hasActiveLicense ->
+                "${subscriptionState?.plan?.title ?: "Lifetime License"} Active"
+              isTrialActive ->
+                "Free Trial Active • ${SubscriptionTimeUtils.formatCountdown(effectiveTrialRemaining)}"
+              isAuthenticated ->
+                subStatus?.label ?: "Signed in • Choose Monthly, Yearly or Lifetime"
               else -> "Login / Create Account to activate"
             },
             icon = Icons.Filled.AccountCircle,
-            tone = if (hasActiveLicense) ClayTones.Green else ClayTones.Orange,
+            tone = when {
+              hasActiveLicense -> ClayTones.Green
+              isTrialActive -> ClayTones.Blue
+              else -> ClayTones.Orange
+            },
             onClick = onOpenAccount,
           )
           SettingsRow3D(
-            title = if (hasActiveLicense) "Lifetime License Active" else "Activate Lifetime License (₹499)",
-            subtitle = if (hasActiveLicense) "Verified active server license" else "Pay ₹499 via PhonePe UPI & submit UTR",
+            title = when {
+              subStatus == EntitlementStatus.LIFETIME_ACTIVE -> "Lifetime License Active"
+              subStatus == EntitlementStatus.MONTHLY_ACTIVE -> "Monthly License Active"
+              subStatus == EntitlementStatus.YEARLY_ACTIVE -> "Yearly License Active"
+              isTrialActive -> "Free Trial (${SubscriptionTimeUtils.formatCountdown(effectiveTrialRemaining)})"
+              else -> "Upgrade Plans (₹499 / ₹999 / ₹2000)"
+            },
+            subtitle = when {
+              hasActiveLicense -> "Verified active server subscription"
+              isTrialActive -> "Monthly ₹499 • Yearly ₹999 • Lifetime ₹2000"
+              else -> "Pay via PhonePe UPI & submit UTR"
+            },
             icon = Icons.Filled.VerifiedUser,
             tone = if (hasActiveLicense) ClayTones.Green else ClayTones.Purple,
             onClick = onOpenLifetimeLicense,
@@ -271,7 +300,7 @@ fun MoreScreen(
               Column(modifier = Modifier.weight(1f)) {
                 Text("Vyapar Billing Pro", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = palette.textPrimary)
                 Text(
-                  "Version 1.0.0 • 100% Free & Offline",
+                  "Version 1.0.0 • Offline POS Billing & Cloud Plans",
                   style = MaterialTheme.typography.bodySmall,
                   color = palette.textSecondary,
                 )
@@ -419,7 +448,7 @@ fun InvoiceSettingsScreen(
             onBack()
           },
           cornerRadius = 20.dp,
-          modifier = Modifier.fillMaxWidth().height(52.dp),
+          modifier = Modifier.fillMaxWidth().defaultMinSize(minHeight = 52.dp),
         ) {
           Text("Save Settings", color = Color.White, fontWeight = FontWeight.ExtraBold)
         }
@@ -600,7 +629,7 @@ fun BackupRestoreScreen(
         Button3D(
           onClick = { exportFullLauncher.launch("VyaparBilling_FullBackup.json") },
           cornerRadius = 18.dp,
-          modifier = Modifier.fillMaxWidth().height(52.dp).testTag("export_full_backup_btn"),
+          modifier = Modifier.fillMaxWidth().defaultMinSize(minHeight = 52.dp).testTag("export_full_backup_btn"),
         ) {
           Icon(Icons.Filled.Download, contentDescription = null, tint = Color.White)
           Spacer(Modifier.width(8.dp))
@@ -613,7 +642,7 @@ fun BackupRestoreScreen(
           onClick = { importBackupLauncher.launch(arrayOf("application/json", "*/*")) },
           tone = ClayTones.Green,
           cornerRadius = 18.dp,
-          modifier = Modifier.fillMaxWidth().height(52.dp).testTag("restore_backup_btn"),
+          modifier = Modifier.fillMaxWidth().defaultMinSize(minHeight = 52.dp).testTag("restore_backup_btn"),
         ) {
           Icon(Icons.Filled.Restore, contentDescription = null, tint = Color.White)
           Spacer(Modifier.width(8.dp))
