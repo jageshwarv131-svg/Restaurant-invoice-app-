@@ -105,6 +105,9 @@ class SupabaseTrialService(
             val startedAt = obj.optString("trial_started_at")
                 .trim()
                 .takeIf { it.isNotBlank() && !it.equals("null", ignoreCase = true) }
+                ?: obj.optString("trial_start_at")
+                    .trim()
+                    .takeIf { it.isNotBlank() && !it.equals("null", ignoreCase = true) }
             val expiresAt = obj.optString("trial_expires_at")
                 .trim()
                 .takeIf { it.isNotBlank() && !it.equals("null", ignoreCase = true) }
@@ -133,7 +136,11 @@ class SupabaseTrialService(
                 isNewlyActivated = isNewlyActivated,
                 serverEpochMillis = serverEpochMillis,
                 clientAnchorElapsedMillis = clientAnchorElapsedMillis,
-                message = if (expired) "2-Day Free Trial Expired" else "2-Day Free Trial Active",
+                message = if (expired) {
+                    SubscriptionTimeUtils.TRIAL_EXPIRED_USER_MESSAGE
+                } else {
+                    "2-Day Free Trial Active"
+                },
             )
         }
     }
@@ -247,6 +254,7 @@ class SupabaseTrialService(
         userId: String,
     ): TrialStatusResult {
         val rpcUrl = baseUrl.trimEnd('/') + ACTIVATE_TRIAL_RPC_PATH
+        var allowDirectInsertFallback = false
         try {
             val rpcRequest = Request.Builder()
                 .url(rpcUrl)
@@ -282,6 +290,18 @@ class SupabaseTrialService(
                         message = "Session expired. Please login again.",
                     )
                 }
+
+                if (response.code == 404) {
+                    allowDirectInsertFallback = true
+                } else {
+                    return TrialStatusResult(
+                        success = true,
+                        hasTrial = false,
+                        serverEpochMillis = serverEpoch,
+                        clientAnchorElapsedMillis = anchorElapsed,
+                        message = "Trial not eligible or unavailable for this account.",
+                    )
+                }
             }
         } catch (_: IOException) {
             return TrialStatusResult(
@@ -291,7 +311,14 @@ class SupabaseTrialService(
                 message = "Network error while starting trial.",
             )
         } catch (_: Exception) {
-            // Fall through to direct table insert using DB default timestamps.
+            allowDirectInsertFallback = false
+        }
+
+        if (!allowDirectInsertFallback) {
+            return TrialStatusResult(
+                success = true,
+                hasTrial = false,
+            )
         }
 
         return try {

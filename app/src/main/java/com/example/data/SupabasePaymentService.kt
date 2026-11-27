@@ -71,6 +71,8 @@ class SupabasePaymentService(
     companion object {
         private const val TAG = "SupabasePaymentService"
         const val LICENSE_AMOUNT_INR = 499
+        const val MONTHLY_AMOUNT_INR = 499
+        const val YEARLY_AMOUNT_INR = 1500
         const val PHONEPE_UPI_ID = "7880023755@axl"
         const val PAYMENT_METHOD_UPI = "UPI"
         const val PAYMENT_METHOD_PHONEPE = "phonepe"
@@ -96,6 +98,21 @@ class SupabasePaymentService(
             return null
         }
 
+        fun validatePlanAndAmount(plan: SubscriptionPlan, amountInr: Int = plan.priceInr): String? {
+            if (!plan.isPurchasable) {
+                return "Selected plan (${plan.title}) is no longer available for new purchase. Please choose Monthly (₹499) or Yearly (₹1,500)."
+            }
+            val expectedAmount = when (plan) {
+                SubscriptionPlan.MONTHLY -> MONTHLY_AMOUNT_INR
+                SubscriptionPlan.YEARLY -> YEARLY_AMOUNT_INR
+                else -> -1
+            }
+            if (amountInr != expectedAmount) {
+                return "Invalid payment amount ₹$amountInr for ${plan.title}. Expected ${plan.formattedPrice}."
+            }
+            return null
+        }
+
         fun extractJwtClaims(accessToken: String): JwtClaims? {
             return try {
                 val parts = accessToken.trim().split(".")
@@ -116,7 +133,7 @@ class SupabasePaymentService(
             upiId: String = PHONEPE_UPI_ID,
             payeeName: String = "Vyapar Billing Pro",
             amountInr: Int = LICENSE_AMOUNT_INR,
-            note: String = "Vyapar Billing Pro License",
+            note: String = "Vyapar Billing Pro Subscription",
         ): Uri {
             return Uri.Builder()
                 .scheme("upi")
@@ -135,7 +152,7 @@ class SupabasePaymentService(
             customerNote: String,
             plan: SubscriptionPlan = SubscriptionPlan.MONTHLY,
         ): JSONObject {
-            val effectivePlan = if (plan.isPaidPlan) plan else SubscriptionPlan.MONTHLY
+            val effectivePlan = if (plan.isPurchasable) plan else SubscriptionPlan.MONTHLY
             return JSONObject()
                 .put("user_id", userId.trim())
                 .put("plan_type", effectivePlan.apiValue)
@@ -239,6 +256,7 @@ class SupabasePaymentService(
         utrInput: String,
         customerNote: String,
         plan: SubscriptionPlan = SubscriptionPlan.MONTHLY,
+        amountInrOverride: Int = plan.priceInr,
         currentEpochSeconds: Long = System.currentTimeMillis() / 1000L,
     ): PaymentSubmitResult {
         val cleanToken = accessToken.trim()
@@ -288,6 +306,11 @@ class SupabasePaymentService(
                 message = "Session token expired. Refreshing authentication...",
                 isUnauthorized = true,
             )
+        }
+
+        val planValidationError = validatePlanAndAmount(plan, amountInrOverride)
+        if (planValidationError != null) {
+            return PaymentSubmitResult(success = false, message = planValidationError)
         }
 
         val utrError = validateUtr(utrInput)

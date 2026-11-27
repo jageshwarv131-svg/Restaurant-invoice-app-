@@ -303,7 +303,7 @@ val paymentErrorMessage: StateFlow<String?> = _paymentErrorMessage.asStateFlow()
     }
   }
   fun selectSubscriptionPlan(plan: SubscriptionPlan) {
-    if (plan.isPaidPlan) {
+    if (plan.isPurchasable) {
       _selectedSubscriptionPlan.value = plan
     }
   }
@@ -393,6 +393,7 @@ val paymentErrorMessage: StateFlow<String?> = _paymentErrorMessage.asStateFlow()
     _paymentSubmissionMessage.value = null
     _paymentErrorMessage.value = null
     _trialRemainingMillis.value = 0L
+    _selectedSubscriptionPlan.value = SubscriptionPlan.MONTHLY
     _subscriptionState.value =
       SubscriptionState(
         userId = null,
@@ -888,7 +889,12 @@ val paymentErrorMessage: StateFlow<String?> = _paymentErrorMessage.asStateFlow()
     // Duplicate-submit protection while request is already in progress
     if (_isPaymentSubmitting.value) return
 
-    val targetPlan = if (plan.isPaidPlan) plan else SubscriptionPlan.MONTHLY
+    if (!plan.isPurchasable) {
+      _paymentErrorMessage.value =
+        "This plan is no longer available for purchase. Choose Monthly Plan (₹499) or Yearly Plan (₹1,500)."
+      return
+    }
+    val targetPlan = plan
     _selectedSubscriptionPlan.value = targetPlan
 
     _paymentErrorMessage.value = null
@@ -903,11 +909,7 @@ val paymentErrorMessage: StateFlow<String?> = _paymentErrorMessage.asStateFlow()
     val cleanUtr = SupabasePaymentService.sanitizeUtr(utrInput)
     val currentSub = _subscriptionState.value
     if (currentSub.status == EntitlementStatus.LIFETIME_ACTIVE) {
-      _paymentErrorMessage.value = "Your Lifetime License is already active."
-      return
-    }
-    if (currentSub.hasActivePaidPlan && currentSub.plan == targetPlan) {
-      _paymentErrorMessage.value = "Your ${targetPlan.title} is already active."
+      _paymentErrorMessage.value = "Your Legacy Lifetime License is already permanently active."
       return
     }
     val existing = _paymentRequests.value

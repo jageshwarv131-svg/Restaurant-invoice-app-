@@ -113,7 +113,7 @@ fun LicenseLockedScreen(
         licenseState.isChecking ->
             "Connecting to secure cloud server to verify your subscription for $featureTitle."
         !isAuthenticated ->
-            "Login or create an account to start your 2-day free trial or activate Monthly (₹499), Yearly (₹999), or Lifetime (₹2000) to unlock $featureTitle."
+            "Login or create an account to start your 48-hour free trial or choose Monthly (₹499 / Month) or Yearly (₹1,500 / Year) to unlock $featureTitle."
         licenseState.status == LicenseStatus.ERROR ->
             licenseState.message
                 ?: "Unable to verify your subscription right now. Connect to the internet and tap Refresh Status."
@@ -122,8 +122,10 @@ fun LicenseLockedScreen(
             "Your ${pendingPayment.resolvedPlan.title} payment (UTR: ${pendingPayment.utr}) is pending admin approval. $featureTitle unlocks once approved."
         rejectedPayment != null ->
             "Your last payment request (UTR: ${rejectedPayment.utr}) was rejected. Please submit a valid PhonePe payment UTR to unlock $featureTitle."
+        subStatus == EntitlementStatus.TRIAL_EXPIRED ->
+            com.example.data.SubscriptionTimeUtils.TRIAL_EXPIRED_USER_MESSAGE
         else ->
-            "Unlock $featureTitle and all Vyapar Billing Pro tools with Monthly ₹499, Yearly ₹999, or Lifetime ₹2000. Your core billing & saved records stay safe."
+            "Unlock $featureTitle with Monthly Plan (₹499 / Month) or Yearly Plan (₹1,500 / Year). Your core billing & saved records stay safe."
     }
 
     Column(
@@ -229,19 +231,19 @@ fun LicenseLockedScreen(
                     )
                 }
 
-                // Quick Plan Options Summary (Monthly ₹499 / Yearly ₹999 / Lifetime ₹2000)
+                // Quick Plan Options Summary (Monthly ₹499 / Yearly ₹1,500)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
                     SubscriptionPlan.purchasablePlans.forEach { plan ->
-                        val isBest = plan == SubscriptionPlan.YEARLY
+                        val isYearly = plan == SubscriptionPlan.YEARLY
                         Column(
                             modifier = Modifier
                                 .weight(1f)
                                 .raised3D(
                                     cornerRadius = 16.dp,
-                                    tone = if (isBest) ClayTones.HeroOrange else null,
+                                    tone = if (isYearly) ClayTones.HeroOrange else null,
                                     shadowDepth = 3.dp,
                                 )
                                 .clickable {
@@ -251,33 +253,28 @@ fun LicenseLockedScreen(
                                         onActivateLicense()
                                     }
                                 }
-                                .padding(horizontal = 8.dp, vertical = 10.dp),
+                                .padding(horizontal = 10.dp, vertical = 12.dp),
                             horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(2.dp),
+                            verticalArrangement = Arrangement.spacedBy(3.dp),
                         ) {
                             Text(
-                                text = when (plan) {
-                                    SubscriptionPlan.MONTHLY -> "Monthly"
-                                    SubscriptionPlan.YEARLY -> "Yearly"
-                                    SubscriptionPlan.LIFETIME -> "Lifetime"
-                                    else -> plan.title
-                                },
-                                color = if (isBest) Color.White else palette.textPrimary,
-                                fontSize = 12.sp,
+                                text = plan.title,
+                                color = if (isYearly) Color.White else palette.textPrimary,
+                                fontSize = 13.sp,
                                 fontWeight = FontWeight.Bold,
                                 textAlign = TextAlign.Center,
                             )
                             Text(
-                                text = "₹${plan.priceInr}",
-                                color = if (isBest) Color.White else SaffronOrange,
-                                fontSize = 16.sp,
+                                text = plan.formattedPrice,
+                                color = if (isYearly) Color.White else SaffronOrange,
+                                fontSize = 18.sp,
                                 fontWeight = FontWeight.ExtraBold,
                                 textAlign = TextAlign.Center,
                             )
                             Text(
                                 text = plan.durationLabel,
-                                color = if (isBest) Color.White.copy(alpha = 0.88f) else palette.textSecondary,
-                                fontSize = 10.sp,
+                                color = if (isYearly) Color.White.copy(alpha = 0.9f) else palette.textSecondary,
+                                fontSize = 11.sp,
                                 textAlign = TextAlign.Center,
                             )
                         }
@@ -321,7 +318,7 @@ fun LicenseLockedScreen(
                     Icon3D(
                         imageVector = Icons.Filled.AccountCircle,
                         contentDescription = null,
-                        tone = ClayTones.Blue,
+                        tone = ClayTones.Orange,
                         size = 18.dp,
                     )
                     Spacer(Modifier.width(8.dp))

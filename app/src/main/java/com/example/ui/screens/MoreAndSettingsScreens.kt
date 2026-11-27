@@ -148,32 +148,32 @@ fun MoreScreen(
             title = "My Account & Subscription",
             subtitle = when {
               subStatus == EntitlementStatus.LIFETIME_ACTIVE || hasActiveLicense ->
-                "${subscriptionState?.plan?.title ?: "Lifetime License"} Active"
+                "${subscriptionState?.plan?.title ?: "Subscription"} Active"
               isTrialActive ->
                 "Free Trial Active • ${SubscriptionTimeUtils.formatCountdown(effectiveTrialRemaining)}"
               isAuthenticated ->
-                subStatus?.label ?: "Signed in • Choose Monthly, Yearly or Lifetime"
+                subStatus?.label ?: "Signed in • Choose Monthly or Yearly plan"
               else -> "Login / Create Account to activate"
             },
             icon = Icons.Filled.AccountCircle,
             tone = when {
               hasActiveLicense -> ClayTones.Green
-              isTrialActive -> ClayTones.Blue
+              isTrialActive -> ClayTones.Amber
               else -> ClayTones.Orange
             },
             onClick = onOpenAccount,
           )
           SettingsRow3D(
             title = when {
-              subStatus == EntitlementStatus.LIFETIME_ACTIVE -> "Lifetime License Active"
-              subStatus == EntitlementStatus.MONTHLY_ACTIVE -> "Monthly License Active"
-              subStatus == EntitlementStatus.YEARLY_ACTIVE -> "Yearly License Active"
+              subStatus == EntitlementStatus.LIFETIME_ACTIVE -> "Legacy Lifetime License Active"
+              subStatus == EntitlementStatus.MONTHLY_ACTIVE -> "Monthly Plan Active"
+              subStatus == EntitlementStatus.YEARLY_ACTIVE -> "Yearly Plan Active"
               isTrialActive -> "Free Trial (${SubscriptionTimeUtils.formatCountdown(effectiveTrialRemaining)})"
-              else -> "Upgrade Plans (₹499 / ₹999 / ₹2000)"
+              else -> "Subscription Plans (₹499 / ₹1,500)"
             },
             subtitle = when {
               hasActiveLicense -> "Verified active server subscription"
-              isTrialActive -> "Monthly ₹499 • Yearly ₹999 • Lifetime ₹2000"
+              isTrialActive -> "Monthly ₹499/mo • Yearly ₹1,500/yr"
               else -> "Pay via PhonePe UPI & submit UTR"
             },
             icon = Icons.Filled.VerifiedUser,

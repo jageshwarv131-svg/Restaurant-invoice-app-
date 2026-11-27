@@ -447,17 +447,17 @@ val thermalPrinterState by vm.thermalPrinterState.collectAsStateWithLifecycle()
                           if (trialRemainingMillis > 0L) trialRemainingMillis
                           else subscriptionState.trialRemainingMillis()
                         val drawerPlanText = when (subscriptionState.status) {
-                          EntitlementStatus.LIFETIME_ACTIVE -> "Lifetime License Active"
-                          EntitlementStatus.MONTHLY_ACTIVE -> "Monthly License Active"
-                          EntitlementStatus.YEARLY_ACTIVE -> "Yearly License Active"
+                          EntitlementStatus.LIFETIME_ACTIVE -> "Legacy Lifetime Active"
+                          EntitlementStatus.MONTHLY_ACTIVE -> "Monthly Plan Active"
+                          EntitlementStatus.YEARLY_ACTIVE -> "Yearly Plan Active"
                           EntitlementStatus.TRIAL_ACTIVE ->
                             "Free Trial • ${SubscriptionTimeUtils.formatCountdown(effectiveTrialRem)}"
                           EntitlementStatus.PAYMENT_PENDING -> "Payment Under Verification"
-                          EntitlementStatus.TRIAL_EXPIRED -> "Free Core • Upgrade Available"
+                          EntitlementStatus.TRIAL_EXPIRED -> "Trial Ended • Choose Plan"
                           EntitlementStatus.MONTHLY_EXPIRED,
                           EntitlementStatus.YEARLY_EXPIRED -> "Plan Expired • Renew Now"
                           EntitlementStatus.REVOKED -> "Subscription Revoked"
-                          else -> "Plans: ₹499 / ₹999 / ₹2000"
+                          else -> "Plans: ₹499/mo • ₹1,500/yr"
                         }
                         Text(
                           text = drawerPlanText,
@@ -1551,7 +1551,7 @@ private fun SubscriptionStatusStrip(
   val isTrial = status == EntitlementStatus.TRIAL_ACTIVE
   val rem = if (trialRemainingMillis > 0L) trialRemainingMillis else subscriptionState.trialRemainingMillis()
   val stripTone = when (status) {
-    EntitlementStatus.TRIAL_ACTIVE -> ClayTones.Blue
+    EntitlementStatus.TRIAL_ACTIVE -> ClayTones.HeroOrange
     EntitlementStatus.PAYMENT_PENDING -> ClayTones.Amber
     EntitlementStatus.TRIAL_EXPIRED,
     EntitlementStatus.MONTHLY_EXPIRED,
@@ -1562,18 +1562,20 @@ private fun SubscriptionStatusStrip(
 
   val title = when (status) {
     EntitlementStatus.TRIAL_ACTIVE ->
-      "Free Trial • ${SubscriptionTimeUtils.formatCountdown(rem)}"
+      "Free Trial • ${SubscriptionTimeUtils.formatRemainingDaysHours(rem)}"
     EntitlementStatus.PAYMENT_PENDING -> "Payment Under Verification"
     EntitlementStatus.PAYMENT_REJECTED -> "Payment Rejected — Resubmit UTR"
-    EntitlementStatus.TRIAL_EXPIRED -> "2-Day Free Trial Ended"
+    EntitlementStatus.TRIAL_EXPIRED -> "Free Trial Expired"
     EntitlementStatus.MONTHLY_EXPIRED, EntitlementStatus.YEARLY_EXPIRED -> "Subscription Expired"
     EntitlementStatus.REVOKED -> "Subscription Revoked"
     else -> "Core Plan Active"
   }
   val subtitle = when (status) {
     EntitlementStatus.TRIAL_ACTIVE ->
-      "Upgrade anytime • Monthly ₹499, Yearly ₹999, Lifetime ₹2000"
-    else -> "Core POS & PDF active • Upgrade for Reports & Cloud Backup"
+      "Auto-expires after 48h • Monthly ₹499/mo or Yearly ₹1,500/yr"
+    EntitlementStatus.TRIAL_EXPIRED ->
+      SubscriptionTimeUtils.TRIAL_EXPIRED_USER_MESSAGE
+    else -> "Core POS & PDF active • Choose Monthly (₹499) or Yearly (₹1,500)"
   }
 
   Row(
@@ -1685,25 +1687,29 @@ private fun AuthAccountScreen(
                 else subscriptionState.trialRemainingMillis()
             val statusText = when {
                 subscriptionState.status == EntitlementStatus.LIFETIME_ACTIVE ->
-                    "Lifetime License Active (₹${subscriptionState.displayPaidAmountInr})"
+                    "Legacy Lifetime License Active (₹${subscriptionState.displayPaidAmountInr})"
                 subscriptionState.status == EntitlementStatus.YEARLY_ACTIVE ->
-                    "Yearly License Active • Expires ${SubscriptionTimeUtils.formatReadableDateTime(subscriptionState.expiresAt)}"
+                    "Yearly Plan Active • Expires ${SubscriptionTimeUtils.formatReadableDateTime(subscriptionState.expiresAt)}"
                 subscriptionState.status == EntitlementStatus.MONTHLY_ACTIVE ->
-                    "Monthly License Active • Expires ${SubscriptionTimeUtils.formatReadableDateTime(subscriptionState.expiresAt)}"
+                    "Monthly Plan Active • Expires ${SubscriptionTimeUtils.formatReadableDateTime(subscriptionState.expiresAt)}"
                 subscriptionState.status == EntitlementStatus.TRIAL_ACTIVE ->
-                    "2-Day Free Trial Active • ${SubscriptionTimeUtils.formatCountdown(effectiveTrialRem)}"
+                    "48-Hour Free Trial Active • ${SubscriptionTimeUtils.formatRemainingDaysHours(effectiveTrialRem)}"
                 licenseState.isChecking -> "Verifying Subscription Status..."
                 licenseState.status == LicenseStatus.ERROR ->
                     licenseState.message ?: "Verification Failed — Tap Refresh"
                 pendingReq != null -> "Payment Under Verification (${pendingReq.resolvedPlan.title})"
                 rejectedReq != null -> "Last Request Rejected — Resubmit Required"
                 approvedReq != null -> "Payment Approved — Tap Refresh to activate"
-                else -> "Core Plan Active • Upgrade to Monthly ₹499, Yearly ₹999, or Lifetime ₹2000"
+                subscriptionState.status == EntitlementStatus.TRIAL_EXPIRED ->
+                    SubscriptionTimeUtils.TRIAL_EXPIRED_USER_MESSAGE
+                else -> "Core Plan Active • Monthly (₹499 / Month) or Yearly (₹1,500 / Year)"
             }
             val statusColor = when {
                 hasActiveLicense -> EmeraldGreen
-                subscriptionState.status == EntitlementStatus.TRIAL_ACTIVE -> com.example.ui.theme.InfoBlue
-                licenseState.status == LicenseStatus.ERROR || rejectedReq != null ->
+                subscriptionState.status == EntitlementStatus.TRIAL_ACTIVE -> SaffronOrange
+                licenseState.status == LicenseStatus.ERROR ||
+                    rejectedReq != null ||
+                    subscriptionState.isExpiredState ->
                     com.example.ui.theme.AlertRed
                 pendingReq != null || approvedReq != null -> AmberGold
                 else -> SaffronOrange
@@ -1736,6 +1742,29 @@ private fun AuthAccountScreen(
                     color = statusColor,
                 )
 
+                if (hasActiveLicense && subscriptionState.status != EntitlementStatus.LIFETIME_ACTIVE) {
+                    val act = subscriptionState.activatedAt ?: licenseState.activatedAt
+                    val exp = subscriptionState.expiresAt ?: licenseState.expiresAt
+                    val rem = subscriptionState.planRemainingMillis()
+                    if (!act.isNullOrBlank()) {
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = "Activated: ${SubscriptionTimeUtils.formatReadableDateTime(act)}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = palette.textSecondary,
+                        )
+                    }
+                    if (!exp.isNullOrBlank()) {
+                        Spacer(Modifier.height(2.dp))
+                        Text(
+                            text = "Remaining: ${SubscriptionTimeUtils.formatRemainingDaysHours(rem)}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = EmeraldGreen,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    }
+                }
+
                 if (subscriptionState.status == EntitlementStatus.TRIAL_ACTIVE && !subscriptionState.trialExpiresAt.isNullOrBlank()) {
                     Spacer(Modifier.height(4.dp))
                     Text(
@@ -1755,9 +1784,9 @@ private fun AuthAccountScreen(
                 ) {
                     Text(
                         text = when {
-                            subscriptionState.status == EntitlementStatus.LIFETIME_ACTIVE -> "View Lifetime License"
-                            hasActiveLicense -> "Manage Plan / Upgrade"
-                            else -> "View Plans & Upgrade"
+                            subscriptionState.status == EntitlementStatus.LIFETIME_ACTIVE -> "View Legacy Lifetime License"
+                            hasActiveLicense -> "View Plan / Renew Subscription"
+                            else -> "Choose Subscription Plan"
                         },
                         color = Color.White,
                         fontWeight = FontWeight.ExtraBold,
@@ -1799,14 +1828,14 @@ private fun AuthAccountScreen(
                 contentPadding = PaddingValues(16.dp),
             ) {
                 Text(
-                    text = "2-Day Free Trial Included",
+                    text = "48-Hour Free Trial Included",
                     color = Color.White,
                     fontWeight = FontWeight.ExtraBold,
                     style = MaterialTheme.typography.titleMedium,
                 )
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    text = "Create a new account to start your 48-hour free trial automatically. Plans start at ₹499/month, ₹999/year, or ₹2000 Lifetime.",
+                    text = "Create a new account to start your 48-hour free trial automatically. Subscription plans: ₹499 / Month or ₹1,500 / Year.",
                     color = Color.White.copy(alpha = 0.92f),
                     style = MaterialTheme.typography.bodySmall,
                 )

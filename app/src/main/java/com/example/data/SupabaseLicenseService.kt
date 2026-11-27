@@ -26,6 +26,7 @@ data class LicenseVerificationResult(
     val userId: String? = null,
     val activatedAt: String? = null,
     val expiresAt: String? = null,
+    val paymentRequestId: String? = null,
     val utr: String? = null,
     val paidAmountInr: Int? = null,
     val isLegacyLifetime: Boolean = false,
@@ -65,12 +66,13 @@ class SupabaseLicenseService(
             activeOnly: Boolean = true,
         ): String {
             val encodedUserId = URLEncoder.encode(userId.trim(), "UTF-8")
+            val orderSuffix = "&order=expires_at.desc.nullslast,activated_at.desc"
             return if (activeOnly) {
                 baseUrl.trimEnd('/') +
-                    "/rest/v1/licenses?user_id=eq.$encodedUserId&status=eq.active&select=*"
+                    "/rest/v1/licenses?user_id=eq.$encodedUserId&status=eq.active&select=*$orderSuffix"
             } else {
                 baseUrl.trimEnd('/') +
-                    "/rest/v1/licenses?user_id=eq.$encodedUserId&select=*"
+                    "/rest/v1/licenses?user_id=eq.$encodedUserId&select=*$orderSuffix"
             }
         }
 
@@ -94,6 +96,8 @@ class SupabaseLicenseService(
             val nowMillis = serverEpochMillis ?: System.currentTimeMillis()
             val array = JSONArray(trimmed)
 
+            var bestActiveCandidate: LicenseVerificationResult? = null
+            var bestActiveExpiryMillis: Long = Long.MIN_VALUE
             var expiredCandidate: LicenseVerificationResult? = null
             var revokedCandidate: LicenseVerificationResult? = null
 
@@ -112,10 +116,16 @@ class SupabaseLicenseService(
                 val expiresAt = obj.optString("expires_at")
                     .trim()
                     .takeIf { it.isNotBlank() && !it.equals("null", ignoreCase = true) }
+                val paymentRequestId = obj.optString("payment_request_id")
+                    .trim()
+                    .takeIf { it.isNotBlank() && !it.equals("null", ignoreCase = true) }
                 val utr = obj.optString("utr")
                     .trim()
                     .takeIf { it.isNotBlank() && !it.equals("null", ignoreCase = true) }
                 val rawPlanType = obj.optString("plan_type")
+                    .trim()
+                    .takeIf { it.isNotBlank() && !it.equals("null", ignoreCase = true) }
+                val rawLicenseType = obj.optString("license_type")
                     .trim()
                     .takeIf { it.isNotBlank() && !it.equals("null", ignoreCase = true) }
                 val rawAmount = obj.optInt("amount_inr", 0).takeIf { it > 0 }
@@ -125,11 +135,13 @@ class SupabaseLicenseService(
                     planType = rawPlanType,
                     amountInr = rawAmount,
                     hasExpiry = hasExpiry,
+                    licenseType = rawLicenseType,
                 )
                 val isLegacyLifetime =
                     resolvedPlan == SubscriptionPlan.LIFETIME &&
-                        !hasExpiry &&
-                        (rawPlanType == null || rawAmount == null || rawAmount == 499)
+                        (rawLicenseType.equals("lifetime", ignoreCase = true) ||
+                            rawPlanType.equals("lifetime", ignoreCase = true) ||
+                            !hasExpiry)
 
                 when {
                     rowStatus.equals("active", ignoreCase = true) -> {
@@ -149,6 +161,7 @@ class SupabaseLicenseService(
                                     userId = rowUserId,
                                     activatedAt = activatedAt,
                                     expiresAt = expiresAt,
+                                    paymentRequestId = paymentRequestId,
                                     utr = utr,
                                     paidAmountInr = rawAmount,
                                     isLegacyLifetime = false,
@@ -160,7 +173,7 @@ class SupabaseLicenseService(
                             continue
                         }
 
-                        return LicenseVerificationResult(
+                        val activeResult = LicenseVerificationResult(
                             hasActiveLicense = true,
                             status = LicenseStatus.ACTIVE,
                             plan = resolvedPlan,
@@ -168,6 +181,7 @@ class SupabaseLicenseService(
                             userId = rowUserId,
                             activatedAt = activatedAt,
                             expiresAt = expiresAt,
+                            paymentRequestId = paymentRequestId,
                             utr = utr,
                             paidAmountInr = rawAmount ?: if (isLegacyLifetime) 499 else resolvedPlan.priceInr,
                             isLegacyLifetime = isLegacyLifetime,
@@ -175,6 +189,16 @@ class SupabaseLicenseService(
                             clientAnchorElapsedMillis = clientAnchorElapsedMillis,
                             message = "${resolvedPlan.title} Active",
                         )
+
+                        // Legacy lifetime grants permanent access; otherwise select highest expiry timestamp.
+                        if (isLegacyLifetime) {
+                            return activeResult
+                        }
+                        val candidateExpiryScore = expiresMillis ?: Long.MAX_VALUE
+                        if (bestActiveCandidate == null || candidateExpiryScore > bestActiveExpiryMillis) {
+                            bestActiveCandidate = activeResult
+                            bestActiveExpiryMillis = candidateExpiryScore
+                        }
                     }
 
                     rowStatus.equals("revoked", ignoreCase = true) -> {
@@ -187,6 +211,7 @@ class SupabaseLicenseService(
                                 userId = rowUserId,
                                 activatedAt = activatedAt,
                                 expiresAt = expiresAt,
+                                paymentRequestId = paymentRequestId,
                                 utr = utr,
                                 paidAmountInr = rawAmount,
                                 isLegacyLifetime = isLegacyLifetime,
@@ -207,6 +232,7 @@ class SupabaseLicenseService(
                                 userId = rowUserId,
                                 activatedAt = activatedAt,
                                 expiresAt = expiresAt,
+                                paymentRequestId = paymentRequestId,
                                 utr = utr,
                                 paidAmountInr = rawAmount,
                                 isLegacyLifetime = false,
@@ -219,6 +245,7 @@ class SupabaseLicenseService(
                 }
             }
 
+            if (bestActiveCandidate != null) return bestActiveCandidate
             if (revokedCandidate != null) return revokedCandidate
             if (expiredCandidate != null) return expiredCandidate
 
@@ -319,14 +346,14 @@ class SupabaseLicenseService(
             LicenseVerificationResult(
                 hasActiveLicense = false,
                 status = LicenseStatus.ERROR,
-                message = "Network error while verifying license. Please check internet and retry.",
+                message = "Network error while verifying subscription. Please check internet and retry.",
                 isNetworkError = true,
             )
         } catch (e: Exception) {
             LicenseVerificationResult(
                 hasActiveLicense = false,
                 status = LicenseStatus.ERROR,
-                message = "Unable to verify license: ${e.message ?: "Unknown error"}",
+                message = "Unable to verify subscription: ${e.message ?: "Unknown error"}",
             )
         }
     }

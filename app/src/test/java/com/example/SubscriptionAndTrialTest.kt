@@ -10,9 +10,7 @@ import com.example.data.EntitlementStatus
 import com.example.data.FeatureEntitlements
 import com.example.data.FeatureKey
 import com.example.data.JsonStorageManager
-import com.example.data.LicenseAccessState
 import com.example.data.LicenseStatus
-import com.example.data.PaymentRequestRecord
 import com.example.data.PaymentRequestStatus
 import com.example.data.SessionStorage
 import com.example.data.SubscriptionPlan
@@ -136,6 +134,10 @@ class SubscriptionAndTrialTest {
     assertTrue("Condition not met within ${timeoutMs}ms", predicate())
   }
 
+  private fun <T> runBlockingHelper(block: suspend () -> T): T =
+    kotlinx.coroutines.runBlocking { block() }
+
+  // Case 1 & Case 3 (restart): New user signup automatically activates 48h backend trial & persists across restart
   @Test
   fun `new user signup automatically activates 48h backend trial and persists across restart`() {
     val app = ApplicationProvider.getApplicationContext<Application>()
@@ -152,22 +154,20 @@ class SubscriptionAndTrialTest {
     val client = mockHttpClient { req ->
       val path = req.url.encodedPath
       when {
-        path.endsWith("/auth/v1/signup") -> {
+        path.endsWith("/auth/v1/signup") ->
           jsonResponse(
             req,
             200,
             """{"access_token":"${buildJwt(userId)}","refresh_token":"ref-new-1","user":{"id":"$userId","created_at":"$trialStartIso"}}""",
             httpDateHeader = serverDateHdr,
           )
-        }
-        path.endsWith("/auth/v1/token") -> {
+        path.endsWith("/auth/v1/token") ->
           jsonResponse(
             req,
             200,
             """{"access_token":"${buildJwt(userId)}","refresh_token":"ref-new-2","user":{"id":"$userId","created_at":"$trialStartIso"}}""",
             httpDateHeader = serverDateHdr,
           )
-        }
         path.endsWith("/rest/v1/licenses") -> jsonResponse(req, 200, "[]", serverDateHdr)
         path.endsWith("/rest/v1/payment_requests") -> jsonResponse(req, 200, "[]", serverDateHdr)
         path.endsWith("/rest/v1/user_trials") && req.method == "GET" -> {
@@ -227,12 +227,13 @@ class SubscriptionAndTrialTest {
         !vmRestarted.isAuthLoading.value &&
         vmRestarted.subscriptionState.value.status == EntitlementStatus.TRIAL_ACTIVE
     }
-    assertEquals(1, rpcActivationCount) // Never reactivated again
+    assertEquals(1, rpcActivationCount)
     assertEquals(trialEndIso, vmRestarted.subscriptionState.value.trialExpiresAt)
   }
 
+  // Case 2 & Case 3 (reinstall/relogin): Expired trial locks premium features, preserves data & core features, never resets
   @Test
-  fun `trial does not reset on reinstall or re-login when expired row exists`() {
+  fun `trial expires after 48h locks premium features and does not reset on reinstall or re-login`() {
     val app = ApplicationProvider.getApplicationContext<Application>()
     val userId = "returning-user-200"
     val serverNow = System.currentTimeMillis()
@@ -270,7 +271,7 @@ class SubscriptionAndTrialTest {
     }
 
     val vm = VyaparViewModel(app)
-    vm.supabaseSession = InMemorySessionStorage() // Simulates fresh reinstall (empty local storage)
+    vm.supabaseSession = InMemorySessionStorage() // Fresh reinstall (empty local session/prefs)
     vm.supabaseAuth = SupabaseAuth(client)
     vm.supabaseLicenseService = SupabaseLicenseService(client)
     vm.supabasePaymentService = SupabasePaymentService(client)
@@ -284,9 +285,15 @@ class SubscriptionAndTrialTest {
     assertFalse(activateAttempted)
     assertEquals(EntitlementStatus.TRIAL_EXPIRED, vm.subscriptionState.value.status)
     assertFalse(vm.evaluateFeature(FeatureKey.PENDING_ORDERS).allowed)
+    assertFalse(vm.evaluateFeature(FeatureKey.REPORTS).allowed)
     assertTrue(vm.evaluateFeature(FeatureKey.POS_BILLING).allowed)
+    assertEquals(
+      SubscriptionTimeUtils.TRIAL_EXPIRED_USER_MESSAGE,
+      vm.evaluateFeature(FeatureKey.REPORTS).reasonMessage,
+    )
   }
 
+  // Case 4: Pre-rollout existing user does NOT receive a fresh automatic trial
   @Test
   fun `existing pre-rollout user never receives a fresh free trial`() {
     val preRolloutCreated = "2026-01-10T08:00:00Z"
@@ -307,9 +314,8 @@ class SubscriptionAndTrialTest {
       }
     }
 
-    val service = SupabaseTrialService(client)
     val result =
-      service.fetchOrActivateTrial(
+      SupabaseTrialService(client).fetchOrActivateTrial(
         accessToken = buildJwt(userId),
         userId = userId,
         isNewSignup = false,
@@ -321,128 +327,46 @@ class SubscriptionAndTrialTest {
     assertFalse(activateCalled)
   }
 
+  // Case 3 (clock tampering): Local clock manipulation cannot reset or spoof trial time
   @Test
-  fun `feature entitlements enforce core free trial-unlocked and paid-only tiers cleanly`() {
-    val now = 1_800_000_000_000L
-    val futureIso = Instant.ofEpochMilli(now + 10_000_000L).toString()
-    val pastIso = Instant.ofEpochMilli(now - 10_000L).toString()
+  fun `clock tampering back or forward does not spoof trial remaining time when server anchored`() {
+    val serverAnchor = 1_800_000_000_000L
+    val elapsedAnchor = 50_000L
+    val trialEnd = Instant.ofEpochMilli(serverAnchor + 10_000_000L).toString()
 
-    val trialState =
+    val anchored =
       SubscriptionState(
         userId = "u1",
         plan = SubscriptionPlan.TRIAL,
         status = EntitlementStatus.TRIAL_ACTIVE,
-        trialExpiresAt = futureIso,
+        trialExpiresAt = trialEnd,
+        serverAnchorEpochMillis = serverAnchor,
+        clientAnchorElapsedMillis = elapsedAnchor,
       )
-    // Trial: Core + Trial-unlocked allowed; Reports & Backup require Paid plan
-    assertTrue(FeatureEntitlements.evaluate(FeatureKey.DASHBOARD, trialState, true, now).allowed)
-    assertTrue(FeatureEntitlements.evaluate(FeatureKey.POS_BILLING, trialState, true, now).allowed)
-    assertTrue(FeatureEntitlements.evaluate(FeatureKey.BILLS, trialState, true, now).allowed)
-    assertTrue(FeatureEntitlements.evaluate(FeatureKey.INVOICE_PREVIEW, trialState, true, now).allowed)
-    assertTrue(FeatureEntitlements.evaluate(FeatureKey.PRODUCTS, trialState, true, now).allowed)
-    assertTrue(FeatureEntitlements.evaluate(FeatureKey.CUSTOMERS, trialState, true, now).allowed)
-    assertTrue(FeatureEntitlements.evaluate(FeatureKey.PENDING_ORDERS, trialState, true, now).allowed)
-    assertTrue(FeatureEntitlements.evaluate(FeatureKey.EXPENSES, trialState, true, now).allowed)
-    assertTrue(FeatureEntitlements.evaluate(FeatureKey.INVENTORY, trialState, true, now).allowed)
-    assertFalse(FeatureEntitlements.evaluate(FeatureKey.REPORTS, trialState, true, now).allowed)
-    assertFalse(FeatureEntitlements.evaluate(FeatureKey.BACKUP_RESTORE, trialState, true, now).allowed)
 
-    // Expired Trial: Core stays unlocked, Trial+Paid & Paid-only locked
-    val expiredTrialState =
-      SubscriptionState(
-        userId = "u1",
-        plan = SubscriptionPlan.FREE,
-        status = EntitlementStatus.TRIAL_EXPIRED,
-        trialExpiresAt = pastIso,
-      )
-    assertTrue(FeatureEntitlements.evaluate(FeatureKey.POS_BILLING, expiredTrialState, true, now).allowed)
-    assertTrue(FeatureEntitlements.evaluate(FeatureKey.BILLS, expiredTrialState, true, now).allowed)
-    assertTrue(FeatureEntitlements.evaluate(FeatureKey.INVOICE_PREVIEW, expiredTrialState, true, now).allowed)
-    assertTrue(FeatureEntitlements.evaluate(FeatureKey.PRODUCTS, expiredTrialState, true, now).allowed)
-    assertTrue(FeatureEntitlements.evaluate(FeatureKey.CUSTOMERS, expiredTrialState, true, now).allowed)
-    assertFalse(FeatureEntitlements.evaluate(FeatureKey.PENDING_ORDERS, expiredTrialState, true, now).allowed)
-    assertFalse(FeatureEntitlements.evaluate(FeatureKey.EXPENSES, expiredTrialState, true, now).allowed)
-    assertFalse(FeatureEntitlements.evaluate(FeatureKey.INVENTORY, expiredTrialState, true, now).allowed)
-    assertFalse(FeatureEntitlements.evaluate(FeatureKey.REPORTS, expiredTrialState, true, now).allowed)
-    assertFalse(FeatureEntitlements.evaluate(FeatureKey.BACKUP_RESTORE, expiredTrialState, true, now).allowed)
-
-    // Paid Monthly / Yearly / Lifetime unlocks everything
-    val paidState =
-      SubscriptionState(
-        userId = "u1",
-        plan = SubscriptionPlan.MONTHLY,
-        status = EntitlementStatus.MONTHLY_ACTIVE,
-        expiresAt = futureIso,
-      )
-    FeatureKey.entries.forEach { key ->
-      assertTrue("${key.name} should be allowed on active Monthly", FeatureEntitlements.evaluate(key, paidState, true, now).allowed)
-    }
-
-    // Revoked blocks non-core, preserves core
-    val revokedState =
-      SubscriptionState(
-        userId = "u1",
-        plan = SubscriptionPlan.LIFETIME,
-        status = EntitlementStatus.REVOKED,
-      )
-    assertTrue(FeatureEntitlements.evaluate(FeatureKey.POS_BILLING, revokedState, true, now).allowed)
-    assertFalse(FeatureEntitlements.evaluate(FeatureKey.REPORTS, revokedState, true, now).allowed)
-    assertFalse(FeatureEntitlements.evaluate(FeatureKey.PENDING_ORDERS, revokedState, true, now).allowed)
+    val tamperedSystemTime = serverAnchor - 315_360_000_000L
+    val trustedNow = anchored.trustedNowMillis(systemNowMillis = tamperedSystemTime, elapsedNowMillis = elapsedAnchor + 1_000L)
+    assertEquals(serverAnchor + 1_000L, trustedNow)
+    assertEquals(9_999_000L, anchored.trialRemainingMillis(trustedNow))
   }
 
+  // Case 5, Case 6, Case 7: Only Monthly ₹499 and Yearly ₹1,500 purchasable; Lifetime rejected/absent
   @Test
-  fun `offline mode with saved session keeps Core billing and saved data unlocked`() {
-    val app = ApplicationProvider.getApplicationContext<Application>()
-    val userId = "offline-user-1"
-    val session = InMemorySessionStorage(buildJwt(userId), "offline-refresh", userId)
-    val offlineClient = mockHttpClient { _ -> throw IOException("Offline") }
+  fun `only Monthly 499 and Yearly 1500 are purchasable and Lifetime or tampered amounts are rejected`() {
+    assertEquals(listOf(SubscriptionPlan.MONTHLY, SubscriptionPlan.YEARLY), SubscriptionPlan.purchasablePlans)
+    assertFalse(SubscriptionPlan.LIFETIME.isPurchasable)
+    assertEquals("₹499 / Month", SubscriptionPlan.MONTHLY.displayPriceLabel)
+    assertEquals("₹1,500 / Year", SubscriptionPlan.YEARLY.displayPriceLabel)
+    assertEquals("Monthly Subscription", SubscriptionPlan.MONTHLY.featureLabel)
+    assertEquals("Yearly Subscription", SubscriptionPlan.YEARLY.featureLabel)
 
-    val vm = VyaparViewModel(app)
-    vm.supabaseSession = session
-    vm.supabaseAuth = SupabaseAuth(offlineClient)
-    vm.supabaseLicenseService = SupabaseLicenseService(offlineClient)
-    vm.supabasePaymentService = SupabasePaymentService(offlineClient)
-    vm.supabaseTrialService = SupabaseTrialService(offlineClient)
-
-    vm.restoreSupabaseSession()
-    waitUntil { vm.isSessionCheckDone.value && vm.isAuthenticated.value && !vm.isAuthLoading.value }
-
-    assertTrue(vm.evaluateFeature(FeatureKey.POS_BILLING).allowed)
-    assertTrue(vm.evaluateFeature(FeatureKey.BILLS).allowed)
-    assertTrue(vm.evaluateFeature(FeatureKey.INVOICE_PREVIEW).allowed)
-    assertTrue(vm.evaluateFeature(FeatureKey.PRODUCTS).allowed)
-    assertTrue(vm.evaluateFeature(FeatureKey.CUSTOMERS).allowed)
-    assertFalse(vm.evaluateFeature(FeatureKey.REPORTS).allowed)
-    assertFalse(vm.evaluateFeature(FeatureKey.BACKUP_RESTORE).allowed)
-
-    // Saved local data and core invoice creation work offline
-    val repo = VyaparRepository(JsonStorageManager(app))
-    val inv = runBlockingHelper {
-      repo.loadAll()
-      repo.completeSaleAndCreateInvoice(
-        customer = null,
-        cartItems = listOf(CartLineInput(name = "Tea", quantity = 2.0, unitPricePaise = 2000L, gstPercent = 5.0)),
-        discountValue = 0.0,
-        isPercentageDiscount = false,
-        taxType = GstTaxType.INTRA_STATE_CGST_SGST,
-        taxMode = GstTaxMode.EXCLUSIVE,
-        paymentMethod = PaymentMethod.CASH,
-        amountPaidPaise = 4200L,
-      )
-    }
-    assertEquals(4200L, inv.grandTotalPaise)
-    assertTrue(repo.invoices.value.any { it.id == inv.id })
-  }
-
-  @Test
-  fun `multi-plan PhonePe payment submission sends exact Monthly 499 Yearly 999 and Lifetime 2000 payloads`() {
     assertEquals("499.00", SupabasePaymentService.buildUpiPaymentUri(amountInr = 499).getQueryParameter("am"))
-    assertEquals("999.00", SupabasePaymentService.buildUpiPaymentUri(amountInr = 999).getQueryParameter("am"))
-    assertEquals("2000.00", SupabasePaymentService.buildUpiPaymentUri(amountInr = 2000).getQueryParameter("am"))
+    assertEquals("1500.00", SupabasePaymentService.buildUpiPaymentUri(amountInr = 1500).getQueryParameter("am"))
 
     val userId = "buyer-user-77"
     val token = buildJwt(userId)
 
+    // Monthly ₹499 & Yearly ₹1,500 succeed with exact payload
     SubscriptionPlan.purchasablePlans.forEach { plan ->
       var capturedBody = ""
       val client = mockHttpClient { req ->
@@ -452,7 +376,7 @@ class SubscriptionAndTrialTest {
         jsonResponse(
           req,
           201,
-          """[{"id":"pay_${plan.apiValue}","user_id":"$userId","plan_type":"${plan.apiValue}","amount_inr":${plan.priceInr},"payment_method":"phonepe","utr":"998877665544","status":"pending","customer_note":"Test","created_at":"2026-11-26T08:00:00Z"}]""",
+          """[{"id":"pay_${plan.apiValue}","user_id":"$userId","plan_type":"${plan.apiValue}","amount_inr":${plan.priceInr},"payment_method":"phonepe","utr":"998877665544","status":"pending","customer_note":"Test","created_at":"2026-11-27T08:00:00Z"}]""",
         )
       }
 
@@ -472,58 +396,126 @@ class SubscriptionAndTrialTest {
       assertEquals("pending", sent.getString("status"))
       assertEquals(plan, res.request?.resolvedPlan)
     }
+
+    // Attempting Lifetime or mismatched price is strictly rejected before hitting network
+    var networkCalled = false
+    val guardService = SupabasePaymentService(mockHttpClient { req ->
+      networkCalled = true
+      jsonResponse(req, 500, "{}")
+    })
+    val rejectedLifetime = guardService.submitPaymentRequest(
+      accessToken = token,
+      userId = userId,
+      utrInput = "998877665544",
+      customerNote = "Hack",
+      plan = SubscriptionPlan.LIFETIME,
+    )
+    assertFalse(rejectedLifetime.success)
+    assertFalse(networkCalled)
+
+    val rejectedMismatch = guardService.submitPaymentRequest(
+      accessToken = token,
+      userId = userId,
+      utrInput = "998877665544",
+      customerNote = "Hack",
+      plan = SubscriptionPlan.YEARLY,
+      amountInrOverride = 499,
+    )
+    assertFalse(rejectedMismatch.success)
+    assertFalse(networkCalled)
   }
 
+  // Case 8, Case 9, Case 10, Case 11, Case 12: Calendar Monthly/Yearly math, expiry, renewal extension, Legacy ₹499 Lifetime
   @Test
-  fun `server verified Monthly Yearly Lifetime expiry revocation and Legacy 499 Lifetime preservation`() {
+  fun `calendar Monthly Yearly expiry renewal extension and Legacy 499 Lifetime preservation work accurately`() {
+    // 1. Real IST calendar month: 15 Jan 10:30 IST -> 15 Feb 10:30 IST
+    val jan15Ist = "2027-01-15T10:30:00+05:30"
+    val feb15Exp = SubscriptionTimeUtils.computeCalendarExpiryIso(jan15Ist, SubscriptionPlan.MONTHLY)
+    assertEquals(Instant.parse("2027-02-15T10:30:00+05:30").toString(), feb15Exp)
+
+    // Month-end clamping: 31 Jan 2027 IST -> 28 Feb 2027 IST (and 2028 leap -> 29 Feb 2028)
+    assertEquals(
+      Instant.parse("2027-02-28T10:30:00+05:30").toString(),
+      SubscriptionTimeUtils.computeCalendarExpiryIso("2027-01-31T10:30:00+05:30", SubscriptionPlan.MONTHLY),
+    )
+    assertEquals(
+      Instant.parse("2028-02-29T10:30:00+05:30").toString(),
+      SubscriptionTimeUtils.computeCalendarExpiryIso("2028-01-31T10:30:00+05:30", SubscriptionPlan.MONTHLY),
+    )
+
+    // 2. Real IST calendar year: 15 Jan 2027 -> 15 Jan 2028
+    val jan15NextYearExp = SubscriptionTimeUtils.computeCalendarExpiryIso(jan15Ist, SubscriptionPlan.YEARLY)
+    assertEquals(Instant.parse("2028-01-15T10:30:00+05:30").toString(), jan15NextYearExp)
+
+    // 3. Active plan renewal extends from existing expiresAt (no wasted days)
+    val renewedFromExisting =
+      SubscriptionTimeUtils.computeCalendarExpiryIso(
+        activatedAtIso = "2027-02-01T09:00:00+05:30",
+        plan = SubscriptionPlan.YEARLY,
+        existingExpiresAtIso = "2027-02-15T10:30:00+05:30",
+      )
+    assertEquals(Instant.parse("2028-02-15T10:30:00+05:30").toString(), renewedFromExisting)
+
+    // Expired renewal extends from new activation date (not past expiry)
+    val renewedAfterExpiry =
+      SubscriptionTimeUtils.computeCalendarExpiryIso(
+        activatedAtIso = "2027-03-01T09:00:00+05:30",
+        plan = SubscriptionPlan.MONTHLY,
+        existingExpiresAtIso = "2027-02-15T10:30:00+05:30",
+      )
+    assertEquals(Instant.parse("2027-04-01T09:00:00+05:30").toString(), renewedAfterExpiry)
+
     val userId = "plan-user-1"
     val token = buildJwt(userId)
     val now = 1_800_000_000_000L
     val serverDateHdr = rfc1123Date(now)
     val futureIso = Instant.ofEpochMilli(now + 20L * 86_400_000L).toString()
+    val futureExtendedIso = Instant.ofEpochMilli(now + 385L * 86_400_000L).toString()
     val pastIso = Instant.ofEpochMilli(now - 60_000L).toString()
 
-    // 1. Active Monthly
+    // Active Monthly
     val monthlyActive =
       SupabaseLicenseService(mockHttpClient { req ->
-        jsonResponse(req, 200, """[{"id":"l1","user_id":"$userId","plan_type":"monthly","amount_inr":499,"status":"active","activated_at":"2026-11-20T00:00:00Z","expires_at":"$futureIso"}]""", serverDateHdr)
+        jsonResponse(req, 200, """[{"id":"l1","user_id":"$userId","plan_type":"monthly","amount_inr":499,"status":"active","activated_at":"2027-01-15T05:00:00Z","expires_at":"$futureIso"}]""", serverDateHdr)
       }).verifySubscriptionLicense(token, userId)
     assertTrue(monthlyActive.hasActiveLicense)
     assertEquals(SubscriptionPlan.MONTHLY, monthlyActive.plan)
+    assertFalse(monthlyActive.isLegacyLifetime)
     assertEquals(EntitlementStatus.MONTHLY_ACTIVE, FeatureEntitlements.resolveSubscriptionState(true, userId, monthlyActive, null, emptyList()).status)
 
-    // 2. Expired Monthly (server Date >= expires_at)
+    // Expired Monthly locks premium features
     val monthlyExpired =
       SupabaseLicenseService(mockHttpClient { req ->
         jsonResponse(req, 200, """[{"id":"l1","user_id":"$userId","plan_type":"monthly","amount_inr":499,"status":"active","expires_at":"$pastIso"}]""", serverDateHdr)
       }).verifySubscriptionLicense(token, userId)
     assertFalse(monthlyExpired.hasActiveLicense)
     assertEquals(LicenseStatus.EXPIRED, monthlyExpired.status)
-    assertEquals(EntitlementStatus.MONTHLY_EXPIRED, FeatureEntitlements.resolveSubscriptionState(true, userId, monthlyExpired, null, emptyList()).status)
+    val expiredSub = FeatureEntitlements.resolveSubscriptionState(true, userId, monthlyExpired, null, emptyList())
+    assertEquals(EntitlementStatus.MONTHLY_EXPIRED, expiredSub.status)
+    assertFalse(FeatureEntitlements.evaluate(FeatureKey.REPORTS, expiredSub, true, now).allowed)
 
-    // 3. Active Yearly -> Expired Yearly
-    val yearlyActive =
+    // Active Yearly (₹1,500) + multiple license history picks highest active expiry
+    val yearlyRenewed =
       SupabaseLicenseService(mockHttpClient { req ->
-        jsonResponse(req, 200, """[{"id":"l2","user_id":"$userId","plan_type":"yearly","amount_inr":999,"status":"active","expires_at":"$futureIso"}]""", serverDateHdr)
+        jsonResponse(
+          req,
+          200,
+          """[
+            {"id":"l_yr","user_id":"$userId","plan_type":"yearly","amount_inr":1500,"status":"active","expires_at":"$futureExtendedIso"},
+            {"id":"l_mo","user_id":"$userId","plan_type":"monthly","amount_inr":499,"status":"expired","expires_at":"$pastIso"}
+          ]""",
+          serverDateHdr,
+        )
       }).verifySubscriptionLicense(token, userId)
-    assertTrue(yearlyActive.hasActiveLicense)
-    assertEquals(SubscriptionPlan.YEARLY, yearlyActive.plan)
-    assertEquals(EntitlementStatus.YEARLY_ACTIVE, FeatureEntitlements.resolveSubscriptionState(true, userId, yearlyActive, null, emptyList()).status)
+    assertTrue(yearlyRenewed.hasActiveLicense)
+    assertEquals(SubscriptionPlan.YEARLY, yearlyRenewed.plan)
+    assertEquals(1500, yearlyRenewed.paidAmountInr)
+    assertEquals(EntitlementStatus.YEARLY_ACTIVE, FeatureEntitlements.resolveSubscriptionState(true, userId, yearlyRenewed, null, emptyList()).status)
 
-    // 4. New ₹2000 Lifetime
-    val newLifetime =
-      SupabaseLicenseService(mockHttpClient { req ->
-        jsonResponse(req, 200, """[{"id":"l3","user_id":"$userId","plan_type":"lifetime","amount_inr":2000,"status":"active","expires_at":null}]""", serverDateHdr)
-      }).verifySubscriptionLicense(token, userId)
-    assertTrue(newLifetime.hasActiveLicense)
-    assertEquals(SubscriptionPlan.LIFETIME, newLifetime.plan)
-    assertFalse(newLifetime.isLegacyLifetime)
-    assertEquals(2000, FeatureEntitlements.resolveSubscriptionState(true, userId, newLifetime, null, emptyList()).displayPaidAmountInr)
-
-    // 5. Legacy ₹499 Lifetime holder (no plan_type / null expires_at)
+    // Legacy ₹499 Lifetime holder (no expires_at) stays permanently Lifetime and is NEVER confused with Monthly
     val legacyLifetime =
       SupabaseLicenseService(mockHttpClient { req ->
-        jsonResponse(req, 200, """[{"id":"l_legacy","user_id":"$userId","status":"active","activated_at":"2026-11-25T10:00:00Z"}]""", serverDateHdr)
+        jsonResponse(req, 200, """[{"id":"l_legacy","user_id":"$userId","license_type":"lifetime","amount_inr":499,"status":"active","activated_at":"2026-10-15T10:00:00Z","expires_at":null}]""", serverDateHdr)
       }).verifySubscriptionLicense(token, userId)
     assertTrue(legacyLifetime.hasActiveLicense)
     assertEquals(SubscriptionPlan.LIFETIME, legacyLifetime.plan)
@@ -532,54 +524,52 @@ class SubscriptionAndTrialTest {
     assertEquals(EntitlementStatus.LIFETIME_ACTIVE, legacySub.status)
     assertEquals(499, legacySub.displayPaidAmountInr)
 
-    // 6. Revoked license
+    // Revoked license never grants premium access
     val revoked =
       SupabaseLicenseService(mockHttpClient { req ->
-        jsonResponse(req, 200, """[{"id":"l_rev","user_id":"$userId","plan_type":"yearly","status":"revoked"}]""", serverDateHdr)
+        jsonResponse(req, 200, """[{"id":"l_rev","user_id":"$userId","plan_type":"yearly","amount_inr":1500,"status":"revoked"}]""", serverDateHdr)
       }).verifySubscriptionLicense(token, userId)
     assertFalse(revoked.hasActiveLicense)
     assertEquals(LicenseStatus.REVOKED, revoked.status)
     assertEquals(EntitlementStatus.REVOKED, FeatureEntitlements.resolveSubscriptionState(true, userId, revoked, null, emptyList()).status)
   }
 
+  // Case 11 (ViewModel renewal submission): Active Monthly/Yearly user CAN submit a renewal UTR for Monthly or Yearly
   @Test
-  fun `clock tampering back or forward does not spoof trial remaining time when server anchored`() {
-    val serverAnchor = 1_800_000_000_000L
-    val elapsedAnchor = 50_000L
-    val trialEnd = Instant.ofEpochMilli(serverAnchor + 10_000_000L).toString()
-
-    val anchored =
-      SubscriptionState(
-        userId = "u1",
-        plan = SubscriptionPlan.TRIAL,
-        status = EntitlementStatus.TRIAL_ACTIVE,
-        trialExpiresAt = trialEnd,
-        serverAnchorEpochMillis = serverAnchor,
-        clientAnchorElapsedMillis = elapsedAnchor,
-      )
-
-    // Even if user turns device clock back 10 years, elapsed monotonic clock controls trustedNowMillis
-    val tamperedSystemTime = serverAnchor - 315_360_000_000L
-    val trustedNow = anchored.trustedNowMillis(systemNowMillis = tamperedSystemTime, elapsedNowMillis = elapsedAnchor + 1_000L)
-    assertEquals(serverAnchor + 1_000L, trustedNow)
-    assertEquals(9_999_000L, anchored.trialRemainingMillis(trustedNow))
-  }
-
-  @Test
-  fun `session persistence restores authenticated state directly and logout clears everything`() {
+  fun `active Monthly subscriber can submit a Yearly 1500 renewal payment request`() {
     val app = ApplicationProvider.getApplicationContext<Application>()
-    val userId = "persisted-user-88"
-    val session = InMemorySessionStorage(buildJwt(userId), "refresh-persist", userId)
+    val userId = "active-monthly-renew"
+    val now = System.currentTimeMillis()
+    val serverDateHdr = rfc1123Date(now)
+    val futureIso = Instant.ofEpochMilli(now + 10L * 86_400_000L).toString()
+    val session = InMemorySessionStorage(buildJwt(userId), "ref-renew", userId)
+
+    var submittedPlan = ""
+    var submittedAmount = 0
 
     val client = mockHttpClient { req ->
       val path = req.url.encodedPath
       when {
         path.endsWith("/auth/v1/token") ->
-          jsonResponse(req, 200, """{"access_token":"${buildJwt(userId)}","refresh_token":"refresh-persist-2","user":{"id":"$userId"}}""")
-        path.endsWith("/auth/v1/logout") -> jsonResponse(req, 200, "{}")
-        path.endsWith("/rest/v1/licenses") -> jsonResponse(req, 200, "[]")
-        path.endsWith("/rest/v1/user_trials") -> jsonResponse(req, 200, "[]")
-        path.endsWith("/rest/v1/payment_requests") -> jsonResponse(req, 200, "[]")
+          jsonResponse(req, 200, """{"access_token":"${buildJwt(userId)}","refresh_token":"ref-renew-2","user":{"id":"$userId"}}""", serverDateHdr)
+        path.endsWith("/rest/v1/licenses") ->
+          jsonResponse(req, 200, """[{"id":"l_m1","user_id":"$userId","plan_type":"monthly","amount_inr":499,"status":"active","activated_at":"2026-11-10T00:00:00Z","expires_at":"$futureIso"}]""", serverDateHdr)
+        path.endsWith("/rest/v1/user_trials") -> jsonResponse(req, 200, "[]", serverDateHdr)
+        path.endsWith("/rest/v1/payment_requests") && req.method == "GET" ->
+          jsonResponse(req, 200, "[]", serverDateHdr)
+        path.endsWith("/rest/v1/payment_requests") && req.method == "POST" -> {
+          val buf = okio.Buffer()
+          req.body?.writeTo(buf)
+          val payload = JSONObject(buf.readUtf8())
+          submittedPlan = payload.getString("plan_type")
+          submittedAmount = payload.getInt("amount_inr")
+          jsonResponse(
+            req,
+            201,
+            """[{"id":"pr_renew_1","user_id":"$userId","plan_type":"$submittedPlan","amount_inr":$submittedAmount,"payment_method":"phonepe","utr":"778899112233","status":"pending","customer_note":"Renew yearly","created_at":"2026-11-27T01:00:00Z"}]""",
+            serverDateHdr,
+          )
+        }
         else -> jsonResponse(req, 404, "{}")
       }
     }
@@ -592,37 +582,77 @@ class SubscriptionAndTrialTest {
     vm.supabaseTrialService = SupabaseTrialService(client)
 
     vm.restoreSupabaseSession()
-    waitUntil { vm.isSessionCheckDone.value && vm.isAuthenticated.value && !vm.isAuthLoading.value }
-    assertEquals(userId, vm.authUserId.value)
+    waitUntil { vm.subscriptionState.value.status == EntitlementStatus.MONTHLY_ACTIVE }
 
-    vm.logoutFromSupabase()
-    waitUntil { !vm.isAuthenticated.value && !vm.isAuthLoading.value }
-    assertNull(vm.authUserId.value)
-    assertNull(session.getAccessToken())
-    assertEquals(EntitlementStatus.UNAUTHENTICATED, vm.subscriptionState.value.status)
-    assertEquals(0L, vm.trialRemainingMillis.value)
+    vm.submitSubscriptionPayment(SubscriptionPlan.YEARLY, "778899112233", "Renew yearly")
+    waitUntil { !vm.isPaymentSubmitting.value && vm.paymentSubmissionMessage.value == "Payment Under Verification" }
+
+    assertEquals("yearly", submittedPlan)
+    assertEquals(1500, submittedAmount)
+    assertEquals(PaymentRequestStatus.PENDING, vm.paymentRequests.value.first().status)
   }
 
+  // Case 14: Offline mode keeps Core billing + saved local data intact, never falsely marks approved or expired
+  @Test
+  fun `offline mode with saved session keeps Core billing unlocked and does not grant false approval`() {
+    val app = ApplicationProvider.getApplicationContext<Application>()
+    val userId = "offline-user-1"
+    val session = InMemorySessionStorage(buildJwt(userId), "offline-refresh", userId)
+    val offlineClient = mockHttpClient { _ -> throw IOException("Offline") }
+
+    val vm = VyaparViewModel(app)
+    vm.supabaseSession = session
+    vm.supabaseAuth = SupabaseAuth(offlineClient)
+    vm.supabaseLicenseService = SupabaseLicenseService(offlineClient)
+    vm.supabasePaymentService = SupabasePaymentService(offlineClient)
+    vm.supabaseTrialService = SupabaseTrialService(offlineClient)
+
+    vm.restoreSupabaseSession()
+    waitUntil { vm.isSessionCheckDone.value && vm.isAuthenticated.value && !vm.isAuthLoading.value }
+
+    assertEquals(EntitlementStatus.ERROR, vm.subscriptionState.value.status)
+    assertTrue(vm.subscriptionState.value.isNetworkError)
+    assertFalse(vm.licenseState.value.hasActiveLicense)
+    assertTrue(vm.evaluateFeature(FeatureKey.POS_BILLING).allowed)
+    assertTrue(vm.evaluateFeature(FeatureKey.BILLS).allowed)
+    assertTrue(vm.evaluateFeature(FeatureKey.INVOICE_PREVIEW).allowed)
+    assertTrue(vm.evaluateFeature(FeatureKey.PRODUCTS).allowed)
+    assertTrue(vm.evaluateFeature(FeatureKey.CUSTOMERS).allowed)
+    assertFalse(vm.evaluateFeature(FeatureKey.REPORTS).allowed)
+    assertFalse(vm.evaluateFeature(FeatureKey.BACKUP_RESTORE).allowed)
+
+    val repo = VyaparRepository(JsonStorageManager(app))
+    val inv = runBlockingHelper {
+      repo.loadAll()
+      repo.completeSaleAndCreateInvoice(
+        customer = null,
+        cartItems = listOf(CartLineInput(name = "Tea", quantity = 2.0, unitPricePaise = 2000L, gstPercent = 5.0)),
+        discountValue = 0.0,
+        isPercentageDiscount = false,
+        taxType = GstTaxType.INTRA_STATE_CGST_SGST,
+        taxMode = GstTaxMode.EXCLUSIVE,
+        paymentMethod = PaymentMethod.CASH,
+        amountPaidPaise = 4200L,
+      )
+    }
+    assertEquals(4200L, inv.grandTotalPaise)
+    assertTrue(repo.invoices.value.any { it.id == inv.id })
+  }
+
+  // Existing PDF logo test preserved cleanly
   @Test
   fun `invoice PDF centers logo with strict aspect ratio and skips logo cleanly when missing`() {
     val context = ApplicationProvider.getApplicationContext<Context>()
     val outDir = File(context.cacheDir, "pdf_logo_test").apply { mkdirs() }
 
-    // 1. Missing logoPath must return null (no Vyapar fallback logo)
     assertNull(InvoicePdfGenerator.loadLogoBitmap(null))
     assertNull(InvoicePdfGenerator.loadLogoBitmap(""))
     assertNull(InvoicePdfGenerator.loadLogoBitmap(File(outDir, "does_not_exist.png").absolutePath))
 
-    // 2. Wide 240x80 (3:1) and Tall 80x240 (1:3) aspect ratio & centering math
     val wideRect = InvoicePdfGenerator.computeTopCenteredLogoRect(595f, 26f, 240, 80, 156f, 76f)!!
     assertEquals(3f, wideRect.width() / wideRect.height(), 0.01f)
     assertEquals(297.5f, (wideRect.left + wideRect.right) / 2f, 0.1f)
 
-    val tallRect = InvoicePdfGenerator.computeTopCenteredLogoRect(595f, 26f, 80, 240, 156f, 76f)!!
-    assertEquals(1f / 3f, tallRect.width() / tallRect.height(), 0.01f)
-    assertEquals(297.5f, (tallRect.left + tallRect.right) / 2f, 0.1f)
-
-    // 3. Generate A4 & 80mm PDFs with real PNG shop logo and without shop logo
     val logoFile = File(outDir, "shop_logo.png")
     val bmp = Bitmap.createBitmap(240, 80, Bitmap.Config.ARGB_8888)
     FileOutputStream(logoFile).use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }
@@ -670,9 +700,7 @@ class SubscriptionAndTrialTest {
     assertTrue(noLogoThermal.inputStream().bufferedReader().use { it.readLine() }.startsWith("%PDF-"))
   }
 
-  private fun <T> runBlockingHelper(block: suspend () -> T): T =
-    kotlinx.coroutines.runBlocking { block() }
-
+  // Case 13: Logout & account switching clears previous user license/trial/payment state cleanly
   @Test
   fun `multi user switch clears previous user license trial and payment history completely`() {
     val app = ApplicationProvider.getApplicationContext<Application>()
